@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quit Timer</title>
+<meta name="theme-color" content="#14202B">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 108 108'%3E%3Crect width='108' height='108' rx='24' fill='%2314202B'/%3E%3Ccircle cx='54' cy='54' r='28' fill='none' stroke='%234FD1A5' stroke-width='5'/%3E%3Crect x='36' y='50' width='28' height='8' fill='%23F2F2F2'/%3E%3Crect x='64' y='50' width='8' height='8' fill='%23E8A24A'/%3E%3Crect x='33' y='50' width='3' height='8' fill='%23FF6B5B'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#12171D;--card:#1B222A;--line:#2A333D;--line2:#2A333D;--text:#EFF3F6;--muted:#8A99A8;--accent:#4FD1A5;--warn:#FF6B5B;--amber:#E8A24A}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:#101a23;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;padding:10px 24px}
+header .logo{font-weight:700;font-size:18px;margin-right:8px}
+#nav{display:flex;gap:4px;flex-wrap:wrap;flex:1}
+.nav{background:none;border:0;color:var(--muted);padding:8px 14px;border-radius:10px;font:inherit;cursor:pointer}
+.nav.on,.nav:hover{background:var(--card);color:var(--text)}
+#acct{color:var(--muted);font-size:13px;display:flex;gap:10px;align-items:center}
+main{max-width:1100px;margin:0 auto;padding:20px 24px 60px}
+h1{margin:0;font-size:28px} h3{margin:0 0 10px;font-size:17px}
+.head{margin:6px 0 14px}.head.row{display:flex;align-items:center;justify-content:space-between}
+.muted{color:var(--muted)} .small{font-size:12px} .warn{color:var(--warn)!important} .ok{color:var(--accent)!important} .amber{color:var(--amber)!important}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+@media(max-width:820px){.grid2{grid-template-columns:1fr}}
+.center{text-align:center}
+.big{width:240px;height:240px;border-radius:50%;border:6px solid var(--accent);background:#173A30;color:var(--text);display:flex;flex-direction:column;align-items:center;justify-content:center;margin:6px auto 10px;cursor:pointer;font:inherit;transition:transform .1s}
+.big:active{transform:scale(.97)} .big b{font-size:30px} .big.locked{border-color:var(--warn);background:#2A1F25;cursor:not-allowed} .big.locked b{font-size:44px}
+.big small{color:var(--muted)}
+.stats{display:flex;gap:10px;margin:10px 0}
+.stat{flex:1;background:#26303A;border-radius:12px;padding:10px;text-align:center}.stat b{display:block;font-size:20px}.stat span{color:var(--muted);font-size:12px}
+.btn{background:var(--accent);color:#06231A;border:0;border-radius:22px;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
+.btn.outline{background:none;color:var(--text);border:1px solid var(--muted)} .btn.wide{width:100%;margin:6px 0;padding:14px}
+.link{background:none;border:0;color:var(--muted);font:inherit;cursor:pointer;padding:6px 8px;border-radius:8px}.link:hover{background:#ffffff10}
+.line{display:flex;align-items:center;gap:8px;padding:4px 0}.line>span{flex:1}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex:none}
+.spend{margin-top:12px;background:#14202B;border-radius:14px;padding:14px;cursor:pointer}.spend b{display:block;font-size:24px}
+input,select{background:#14202B;color:var(--text);border:1px solid #ffffff30;border-radius:10px;padding:9px 10px;font:inherit}
+input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent}
+.form>*{margin-bottom:8px}.form input#f_title{width:100%}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row label{color:var(--muted);font-size:13px}
+.days{display:flex;gap:6px}.day{width:34px;height:34px;border-radius:50%;border:1px solid var(--muted);background:none;color:var(--text);cursor:pointer;font:inherit}.day.on{background:var(--accent);border-color:var(--accent);color:#06231A}
+.daynav{display:flex;align-items:center;gap:8px;margin-bottom:12px}.daynav div{flex:1;text-align:center}.daynav b{display:block}.daynav .link{font-size:18px}
+.hours{border-top:1px solid var(--line)}
+.hour{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)}.hour>span{width:60px;color:var(--muted);font-size:12px;padding-top:8px;flex:none}.hour>div{flex:1;display:flex;flex-direction:column;gap:6px}
+.hour.now>span{color:var(--accent);font-weight:700}.hour.now .slot{border-color:var(--accent)}
+.slot{height:40px;border:1px dashed #ffffff25;border-radius:10px;background:none;color:#ffffff55;text-align:left;padding:0 12px;cursor:pointer;font-size:16px}.slot:hover{background:#ffffff08;color:var(--text)}
+.task{display:flex;align-items:center;gap:6px;background:var(--card);border-radius:12px;border-left:6px solid;padding:6px 8px 6px 12px}
+.task .tmain{flex:1;cursor:pointer}.task small{display:block;color:var(--muted);font-size:12px}.task b{font-size:15px}
+.task.late{background:#3A1F24}.task.late b,.task.late small{color:var(--warn)}.task.done b{text-decoration:line-through;color:var(--muted)}
+.prayer{width:100%;display:flex;align-items:center;justify-content:space-between;background:var(--card);border:2px solid transparent;border-radius:14px;padding:16px;margin-bottom:10px;color:var(--text);font:inherit;cursor:pointer;text-align:left}
+.prayer b{display:block;font-size:18px}.prayer small{color:var(--muted)}.prayer i{width:32px;height:32px;border-radius:50%;border:2px solid var(--muted);display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:700}
+.prayer.done{background:#173A30}.prayer.done b{text-decoration:line-through}.prayer.done i{background:var(--accent);border-color:var(--accent);color:#06231A}
+.prayer.late{background:#3A1F24}.prayer.late b,.prayer.late small{color:var(--warn)}.prayer.next{border-color:var(--accent)}
+.bar{height:14px;border-radius:7px;background:#ffffff18;overflow:hidden;flex:1}.bar i{display:block;height:100%;border-radius:7px}.bar.big{height:12px;margin:6px 0}
+.barrow{display:flex;align-items:center;gap:10px;margin:5px 0}.barrow span{width:110px;font-size:13px}.barrow em{font-style:normal;font-size:12px;min-width:90px;text-align:right}
+.huge{font-size:26px}
+.cols{display:flex;align-items:flex-end;gap:6px;height:150px}.cols div{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}.cols i{width:70%;border-radius:5px 5px 0 0;display:block}.cols small{color:var(--muted);font-size:10px}
+table{width:100%;border-collapse:collapse;font-size:14px}th{color:var(--muted);font-weight:500;text-align:left}td,th{padding:7px 6px;border-bottom:1px solid var(--line)}
+.chart{width:100%;height:160px;display:block}
+dialog{background:var(--card);color:var(--text);border:0;border-radius:18px;padding:0;max-width:520px;width:92%}dialog::backdrop{background:#000a}
+.dlg{padding:20px;display:flex;flex-direction:column;gap:8px}.dlg input#e_title,.dlg input#f_title{width:100%}
+#login{max-width:460px;margin:12vh auto;text-align:center}#login .card{padding:30px}
+.gbtn{display:inline-flex;align-items:center;gap:10px;background:#fff;color:#222;border:0;border-radius:24px;padding:12px 22px;font:inherit;font-weight:600;cursor:pointer}
+#status{font-size:12px}
+.pill{font-size:11px;padding:2px 8px;border-radius:6px;white-space:nowrap;border:0;font-family:inherit}
+.warnpill{background:#3A1F24;color:#FF9A8E;cursor:pointer;padding:6px 12px;font-size:13px}
+.week{display:flex;gap:4px;padding:6px}.wd{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;color:var(--muted);border-radius:10px;padding:5px 0;cursor:pointer;font:inherit;font-size:11px}
+.wd b{color:var(--text);font-size:15px}.wd i{width:6px;height:6px;border-radius:50%}.wd.on{background:#E8EDF2;color:#12171D}.wd.on b{color:#12171D}
+.cool{display:flex;align-items:center;gap:16px}.ringbtn{position:relative;width:130px;height:130px;border:0;background:none;padding:0;cursor:pointer;color:var(--text);flex:none}
+.ringbtn:disabled{cursor:not-allowed}.ringbtn svg{position:absolute;inset:0}.rc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}.rc b{font-size:22px}.rc small{color:var(--muted)}
+.qa{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}.qbtn{flex:1;background:#26303A;color:var(--text);border:1px solid #34404C;border-radius:10px;padding:10px;font:inherit;cursor:pointer}
+.qbtn.active{background:#173A30;color:var(--accent);border-color:var(--accent)}
+.rings{display:flex;justify-content:space-between}.ring{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted)}
+.timeline{display:flex;flex-direction:column;gap:6px}.tl{border-left:4px solid var(--c);background:color-mix(in srgb,var(--c) 16%,#1B222A);border-radius:8px;padding:6px 10px;cursor:pointer}
+.tl b{display:block}.tl small{color:var(--muted)}.tl.late{background:#3A1F24}.tl.late b{color:var(--warn)}.tl.done b{text-decoration:line-through;color:var(--muted)}
+.prayer-tl{border:1px dashed var(--accent);border-radius:8px;padding:5px 10px;color:#7FE3C0;font-size:13px}.prayer-tl.done{opacity:.5}
+.nowline{display:flex;align-items:center;gap:6px;color:var(--warn);font-size:11px}.nowline i{flex:1;height:2px;background:var(--warn);position:relative}.nowline i:before{content:'';position:absolute;left:-2px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--warn)}
+.slot.free{height:auto;padding:6px 12px;font-size:12px;text-align:center}
+.stack{display:flex;height:10px;border-radius:5px;overflow:hidden}.stack i{display:block;height:100%}
+.tip{background:#1A2A3A;border-color:#2C4A6B;color:#9CC1FF}.clickable{cursor:pointer;border-radius:8px}.clickable:hover{background:#ffffff08}
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <div class="card">
+    <h1>Quit Timer</h1>
+    <p class="muted">Sign in with the same Google account you use on the phone.</p>
+    <button class="gbtn" id="signin"><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Sign in with Google</button>
+    <p id="loginerr" class="warn small"></p>
+  </div>
+</div>
+<div id="app" hidden>
+  <header><span class="logo">Quit Timer</span><nav id="nav"></nav><div id="acct"><span id="status" class="muted">Connecting…</span><span id="who"></span><button class="link" id="signout">Sign out</button></div></header>
+  <main id="main"></main>
+</div>
+<script>
+// ===================== Quit Timer — shared logic (same data as the Android app) =====================
+// Data lives in 3 documents, exactly like the phone's local storage files:
+//   quit_timer        (cigarettes, coffee, exercise, heart caches)
+//   quit_timer_tasks  (tasks, prayers, repeats)
+//   quit_timer_budget (expenses, income, rent)
+
+const DATA = { quit_timer: {}, quit_timer_tasks: {}, quit_timer_budget: {} };
+let WRITE = (file, key, value) => { DATA[file][key] = value; }; // replaced by the Firestore writer
+
+const DAY = 86400000;
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const dayOf = ms => ymd(new Date(ms));
+const ymOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+const parseYm = s => { const [y, m] = s.split('-').map(Number); return new Date(y, m - 1, 1); };
+const addMonths = (s, n) => { const d = parseYm(s); return ymOf(new Date(d.getFullYear(), d.getMonth() + n, 1)); };
+const monthLen = s => { const d = parseYm(s); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+const atMinute = (dayStr, minute) => { const d = parseYmd(dayStr); d.setMinutes(minute); return d.getTime(); };
+const minuteOf = ms => { const d = new Date(ms); return d.getHours() * 60 + d.getMinutes(); };
+const fmtTime = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const fmtMin = m => fmtTime(new Date(2000, 0, 1, Math.floor(m / 60) % 24, m % 60).getTime());
+const money = v => Math.round(v).toLocaleString('en-US') + ' EGP';
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id' + Date.now() + Math.random().toString(16).slice(2));
+const dow = dayStr => { const g = parseYmd(dayStr).getDay(); return g === 0 ? 7 : g; }; // Mon=1..Sun=7
+const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const jsonOr = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } };
+
+// ---------------- cigarettes / coffee / exercise ----------------
+const Q = () => DATA.quit_timer;
+const EVT = { SMOKE: { key: 'cigarettes', label: 'Cigarette', before: 20, after: 30 }, COFFEE: { key: 'coffee', label: 'Coffee', before: 20, after: 60 } };
+function events(type) { return (Q()[EVT[type].key] || '').split(',').filter(Boolean).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b); }
+function saveEvents(type, list) { WRITE('quit_timer', EVT[type].key, [...list].sort((a, b) => a - b).join(',')); }
+function startDate() { return Q().start_date || ymd(new Date()); }
+function exerciseDays() { return new Set(Q().exercise_days || []); }
+function saveExerciseDays(set) { WRITE('quit_timer', 'exercise_days', [...set].sort()); }
+const BASE_MINUTES = 30, QUIT_DAY = 366;
+function dayNumber(start, day) { return Math.max(0, Math.round((parseYmd(day) - parseYmd(start)) / DAY)) + 1; }
+const increaseOnDay = n => n <= 90 ? 1 : n <= 180 ? 2 : n <= 270 ? 3 : 4;
+const phaseOf = n => n >= QUIT_DAY ? 5 : n <= 90 ? 1 : n <= 180 ? 2 : n <= 270 ? 3 : 4;
+const nextPhaseDay = n => n <= 90 ? 91 : n <= 180 ? 181 : n <= 270 ? 271 : n < QUIT_DAY ? QUIT_DAY : null;
+const dateOfDay = (start, n) => ymd(addDays(parseYmd(start), n - 1));
+function gapForDayNumber(n) { let g = BASE_MINUTES; for (let k = 2; k <= Math.min(n, QUIT_DAY - 1); k++) g += increaseOnDay(k); return g; }
+function gapMinutes(start, day) { return gapForDayNumber(dayNumber(start, day)); }
+const isQuit = (start, day) => dayNumber(start, day) >= QUIT_DAY;
+function countOn(list, day) { return list.filter(t => dayOf(t) === day).length; }
+function unlockAt(cigs, start, now) {
+  const today = dayOf(now);
+  if (isQuit(start, today)) return Infinity;
+  const todays = cigs.filter(t => dayOf(t) === today);
+  if (!todays.length) return null;
+  const at = Math.max(...todays) + gapMinutes(start, today) * 60000;
+  return now >= at ? null : at;
+}
+
+// weight (kg) per day
+const WEIGHT_START = 87, WEIGHT_TARGET = 82;
+function weights() { return jsonOr(Q().weights, {}); }
+function saveWeight(day, kg) { const w = weights(); if (kg == null) delete w[day]; else w[day] = kg; WRITE('quit_timer', 'weights', JSON.stringify(w)); }
+
+// ---------------- prayer times (Cairo, Egyptian General Authority) ----------------
+const Prayer = (() => {
+  const LAT = 30.0444, LNG = 31.2357;
+  const rad = x => x * Math.PI / 180, deg = x => x * 180 / Math.PI;
+  const ds = x => Math.sin(rad(x)), dc = x => Math.cos(rad(x)), dt = x => Math.tan(rad(x));
+  const fa = a => a - 360 * Math.floor(a / 360), fh = a => a - 24 * Math.floor(a / 24);
+  function julian(y, m, d) { if (m <= 2) { y -= 1; m += 12; } const A = Math.floor(y / 100), B = 2 - A + Math.floor(A / 4); return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + B - 1524.5; }
+  function sun(jd) {
+    const D = jd - 2451545.0, g = fa(357.529 + 0.98560028 * D), q = fa(280.459 + 0.98564736 * D);
+    const L = fa(q + 1.915 * ds(g) + 0.020 * ds(2 * g)), e = 23.439 - 0.00000036 * D;
+    const RA = deg(Math.atan2(dc(e) * ds(L), dc(L))) / 15;
+    return { decl: deg(Math.asin(ds(e) * ds(L))), eqt: q / 15 - fh(RA) };
+  }
+  return {
+    NAMES: ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'],
+    forDate(dayStr) {
+      const d = parseYmd(dayStr);
+      const tz = -new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12).getTimezoneOffset() / 60;
+      const jd = julian(d.getFullYear(), d.getMonth() + 1, d.getDate()) - LNG / (15 * 24);
+      const mid = t => fh(12 - sun(jd + t).eqt);
+      const sat = (a, t, ccw) => { const de = sun(jd + t).decl, n = mid(t); const v = (-ds(a) - ds(de) * ds(LAT)) / (dc(de) * dc(LAT)); const tt = deg(Math.acos(Math.max(-1, Math.min(1, v)))) / 15; return ccw ? n - tt : n + tt; };
+      const asr = t => { const de = sun(jd + t).decl; return sat(-deg(Math.atan(1 / (1 + dt(Math.abs(LAT - de))))), t, false); };
+      const adj = tz - LNG / 15;
+      return [sat(19.5, 5 / 24, true), mid(12 / 24) + 1 / 60, asr(13 / 24), sat(0.833, 18 / 24, false) + 2 / 60, sat(17.5, 18 / 24, false)]
+        .map(x => ((Math.round((x + adj) * 60) % 1440) + 1440) % 1440);
+    }
+  };
+})();
+
+// ---------------- tasks ----------------
+const CATS = { WORK: { label: 'Work', color: '#6CA0FF' }, PERSONAL: { label: 'Personal', color: '#E8A24A' }, PRAYER: { label: 'Prayer', color: '#4FD1A5' }, GYM: { label: 'Gym', color: '#C084FC' }, STUDY: { label: 'Study', color: '#5EC8E5' }, READING: { label: 'Reading', color: '#F472B6' } };
+const WIRD_ID = 'wird';
+const TK = () => DATA.quit_timer_tasks;
+function oneTasks() { return jsonOr(TK().one, []); }
+function saveOne(list) { WRITE('quit_timer_tasks', 'one', JSON.stringify(list)); }
+function recurring() { return jsonOr(TK().rec, []); }
+function saveRec(list) { WRITE('quit_timer_tasks', 'rec', JSON.stringify(list)); }
+function doneSet() { return new Set(TK().occ_done || []); }
+function skipSet() { return new Set(TK().occ_skip || []); }
+
+function seedTasksIfNeeded() {
+  if (!TK().seeded) {
+    const list = Prayer.NAMES.map((n, i) => ({ id: 'prayer' + i, title: n, cat: 'PRAYER', min: 0, dur: 15, days: [1, 2, 3, 4, 5, 6, 7], prayer: i }));
+    list.push({ id: 'gym', title: 'Gym', cat: 'GYM', min: 22 * 60, dur: 60, days: [2, 3, 4, 5], prayer: -1 });
+    saveRec(list); WRITE('quit_timer_tasks', 'seeded', true);
+  }
+  if (!TK().seeded_wird) {
+    saveRec([...recurring(), { id: 'wird', title: 'Daily Wird', cat: 'PRAYER', min: 600, dur: 15, days: [1, 2, 3, 4, 5, 6, 7], prayer: -1 }]);
+    WRITE('quit_timer_tasks', 'seeded_wird', true);
+  }
+}
+
+function rollover() {
+  const today = ymd(new Date());
+  let changed = false;
+  const list = oneTasks().map(t => {
+    if (!t.done && dayOf(t.start) < today) { changed = true; return { ...t, start: atMinute(today, minuteOf(t.start)), overdue: true }; }
+    return t;
+  });
+  if (changed) saveOne(list);
+}
+
+function occurrencesOn(day) {
+  const s = parseYmd(day).getTime(), e = addDays(parseYmd(day), 1).getTime();
+  const done = doneSet(), skip = skipSet(), out = [];
+  for (const t of oneTasks()) if (t.start >= s && t.start < e)
+    out.push({ key: 'o:' + t.id, title: t.title, cat: t.cat, start: t.start, dur: t.dur || 0, done: !!t.done, overdue: !!t.overdue, recId: null, oneId: t.id, isPrayer: t.cat === 'PRAYER', isWird: false, isSalah: false });
+  const pt = Prayer.forDate(day), wd = dow(day);
+  for (const r of recurring()) {
+    if (!(r.days || []).includes(wd)) continue;
+    const key = `r:${r.id}:${day}`;
+    if (skip.has(key)) continue;
+    const minute = r.prayer >= 0 && r.prayer <= 4 ? pt[r.prayer] : r.min;
+    out.push({ key, title: r.title, cat: r.cat, start: atMinute(day, minute), dur: r.dur || 0, done: done.has(key), overdue: false, recId: r.id, oneId: null, isPrayer: r.cat === 'PRAYER', isWird: r.id === WIRD_ID, isSalah: String(r.id).startsWith('prayer') });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+const isLate = (o, now) => !o.done && (o.overdue || o.start < now);
+
+function findOcc(key) {
+  if (key.startsWith('o:')) { const t = oneTasks().find(x => x.id === key.slice(2)); return t ? occurrencesOn(dayOf(t.start)).find(o => o.key === key) : null; }
+  const day = key.split(':').pop();
+  return occurrencesOn(day).find(o => o.key === key) || null;
+}
+function setTaskDone(key, done) {
+  const o = findOcc(key); if (!o) return;
+  if (o.oneId) saveOne(oneTasks().map(t => t.id === o.oneId ? { ...t, done } : t));
+  else { const s = doneSet(); done ? s.add(key) : s.delete(key); WRITE('quit_timer_tasks', 'occ_done', [...s]); }
+  if (o.cat === 'GYM') { const ex = exerciseDays(); const d = dayOf(o.start); done ? ex.add(d) : ex.delete(d); saveExerciseDays(ex); }
+}
+function postponeTask(key, newStart) {
+  const o = findOcc(key); if (!o) return;
+  newStart = Math.floor(newStart / 60000) * 60000;
+  if (o.oneId) saveOne(oneTasks().map(t => t.id === o.oneId ? { ...t, start: newStart, overdue: false, done: false } : t));
+  else { const s = skipSet(); s.add(key); WRITE('quit_timer_tasks', 'occ_skip', [...s]); addOne(o.title, o.cat, newStart, o.dur); }
+}
+function addOne(title, cat, start, dur) { saveOne([...oneTasks(), { id: uuid(), title: title.trim(), cat, start, dur, done: false, overdue: false }]); }
+function addRecurring(title, cat, min, dur, days) { saveRec([...recurring(), { id: uuid(), title: title.trim(), cat, min, dur, days: [...days].sort(), prayer: -1 }]); }
+function updateOne(id, title, cat, start, dur) { saveOne(oneTasks().map(t => t.id === id ? { ...t, title: title.trim(), cat, start, dur, overdue: false } : t)); }
+function updateRec(id, title, cat, min, dur, days) { saveRec(recurring().map(r => r.id === id ? { ...r, title: title.trim(), cat, min, dur, days: days.length ? [...days].sort() : r.days } : r)); }
+function deleteOcc(o) { if (o.oneId) saveOne(oneTasks().filter(t => t.id !== o.oneId)); else saveRec(recurring().filter(r => r.id !== o.recId)); }
+// ---------------- daily wird (verses) ----------------
+function wirdVerses() { return jsonOr(TK().wird_verses, {}); }
+function setWirdVerses(day, n) { const w = wirdVerses(); if (!n || n <= 0) delete w[day]; else w[day] = n; WRITE('quit_timer_tasks', 'wird_verses', JSON.stringify(w)); }
+const wirdMonthTotal = m => Object.entries(wirdVerses()).filter(([d]) => d.startsWith(m)).reduce((s, [, n]) => s + n, 0);
+const wirdTarget = m => Math.max(100, wirdMonthTotal(addMonths(m, -1)));
+const wirdAllTime = () => Object.values(wirdVerses()).reduce((s, n) => s + n, 0);
+
+// ---------------- time spent (Done tasks with an end time, current month) ----------------
+function doneTimedThisMonth() {
+  const today = new Date(), now = Date.now(); let out = [];
+  for (let i = 0; i < today.getDate(); i++) out = out.concat(occurrencesOn(ymd(addDays(today, -i))));
+  return out.filter(o => o.done && !o.isPrayer && o.dur > 0 && o.start <= now);
+}
+function monthMinutesByTitle() {
+  const g = {};
+  for (const o of doneTimedThisMonth()) { const k = o.title.trim().toLowerCase(); g[k] = g[k] || { title: o.title, cat: o.cat, min: 0 }; g[k].min += o.dur; }
+  return Object.values(g).sort((a, b) => b.min - a.min);
+}
+function monthMinutesByCategory() { const g = {}; for (const o of doneTimedThisMonth()) g[o.cat] = (g[o.cat] || 0) + o.dur; return g; }
+
+// ---------------- check-in questions ----------------
+function checkIns(now = Date.now()) {
+  const occs = occurrencesOn(ymd(new Date())), out = [];
+  for (const o of occs) {
+    if (o.done || o.isPrayer) continue;
+    const askAt = o.dur > 0 ? o.start + o.dur * 60000 : o.start + 3600000;
+    if (now >= askAt) out.push({ o, q: `Did you finish ${o.title}?`, prayer: false });
+  }
+  const salah = occs.filter(o => o.isSalah).sort((a, b) => a.start - b.start);
+  salah.forEach((p, i) => {
+    if (p.done || p.start > now) return;
+    const next = salah[i + 1];
+    const askAt = next ? next.start - 15 * 60000 : p.start + 2 * 3600000;
+    if (now >= askAt) out.push({ o: p, q: `Did you pray ${p.title} today?`, prayer: true });
+  });
+  return out;
+}
+function fewerStreak(cigs, start) {
+  let n = 0, d = addDays(new Date(), -1);
+  while (ymd(d) > start && countOn(cigs, ymd(d)) < countOn(cigs, ymd(addDays(d, -1)))) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+function taskStats(days = 7) {
+  const now = Date.now(), today = new Date(); let occs = [];
+  for (let i = 0; i < days; i++) occs = occs.concat(occurrencesOn(ymd(addDays(today, -i))).filter(o => o.start <= now));
+  const tasks = occs.filter(o => !o.isPrayer), pr = occs.filter(o => o.isPrayer);
+  const byCat = {}; for (const c of Object.keys(CATS)) { const l = occs.filter(o => o.cat === c); byCat[c] = [l.filter(o => o.done).length, l.length]; }
+  return { total: tasks.length, done: tasks.filter(o => o.done).length, prayersTotal: pr.length, prayersDone: pr.filter(o => o.done).length, byCat };
+}
+
+// ---------------- budget ----------------
+const BG = () => DATA.quit_timer_budget;
+const EXP_CATS = { FOOD: ['Food', '#E8A24A'], CIGARETTES: ['Cigarettes', '#FF6B5B'], FUEL: ['Fuel', '#6CA0FF'], BILLS: ['Bills', '#C084FC'], RENT: ['Rent', '#4FD1A5'], TRANSPORT: ['Transport', '#5EC8E5'], SHOPPING: ['Shopping', '#F472B6'] };
+const MANUAL_CATS = Object.keys(EXP_CATS).filter(c => c !== 'CIGARETTES');
+const METHODS = { CASH: 'Cash', INSTAPAY: 'InstaPay', VODAFONE: 'Vodafone Cash', CARD: 'Card', NONE: '—' };
+const PICK_METHODS = ['CASH', 'INSTAPAY', 'VODAFONE', 'CARD'];
+const BILL_TYPES = ['Et', 'We', 'Vo', 'Elec', 'Wat', 'Gas', 'Other'];
+const CFG = { PACK_PRICE: 130, PACK_SIZE: 20, RENT: 8000, RENT_DUE_DAY: 3, WARN: 0.2 };
+CFG.PER_CIG = CFG.PACK_PRICE / CFG.PACK_SIZE;
+const INCOME = [
+  { id: 'salary', name: 'Salary', amount: 20000, from: 5, to: 20 },
+  { id: 'k1', name: 'K1', amount: 3200, from: 1, to: 5 },
+  { id: 'k2', name: 'K2', amount: 3200, from: 15, to: 20 },
+  { id: 'rent_capital', name: 'Capital rent', amount: 3300, from: 9, to: 15 },
+  { id: 'rent_october', name: 'October rent', amount: 5750, from: 1, to: 5 },
+  { id: 'bonus', name: 'Bonus', amount: 4500, from: 1, to: 7 },
+];
+function seedBudgetIfNeeded() {
+  if (!BG().start_month) {
+    const now = ymOf(new Date());
+    WRITE('quit_timer_budget', 'start_month', now);
+    WRITE('quit_timer_budget', 'override_' + now, '10000');
+    WRITE('quit_timer_budget', 'override_' + addMonths(now, 1), '20000');
+  }
+}
+const startMonth = () => BG().start_month || ymOf(new Date());
+function expenses() { return jsonOr(BG().expenses, []); }
+function saveExpenses(l) { WRITE('quit_timer_budget', 'expenses', JSON.stringify(l)); }
+function addExpense(amount, cat, method, time = Date.now(), note = '', sub = null) { const id = uuid(); saveExpenses([...expenses(), { id, amount, cat, method, time, note: (note || '').trim(), sub: cat === 'BILLS' ? sub : null }]); return id; }
+function updateExpense(id, amount, cat, method, note, sub) { saveExpenses(expenses().map(e => e.id === id ? { ...e, amount, cat, method, note: (note || '').trim(), sub: cat === 'BILLS' ? sub : null } : e)); }
+function billsBreakdown(m) { const r = {}; expensesIn(m).filter(e => e.cat === 'BILLS').forEach(e => { const k = e.sub || 'Other'; r[k] = (r[k] || 0) + e.amount; }); return r; }
+function safeToday(m, cigs) { const t = new Date(); const left = ymOf(t) === m ? monthLen(m) - t.getDate() + 1 : monthLen(m); return Math.max(0, (budgetFor(m) - spent(m, cigs)) / left); }
+function deleteExpense(id) { saveExpenses(expenses().filter(e => e.id !== id)); }
+const expensesIn = m => expenses().filter(e => ymOf(new Date(e.time)) === m).sort((a, b) => b.time - a.time);
+const incomeStatus = (m, id) => BG()[`income_${m}_${id}`] || null;
+const setIncome = (m, id, st) => WRITE('quit_timer_budget', `income_${m}_${id}`, st); // null = delete
+const incomeCollected = m => INCOME.filter(i => incomeStatus(m, i.id) === 'DONE').reduce((s, i) => s + i.amount, 0);
+const rentState = m => BG()['rent_' + m] || null;
+function payRent(m) {
+  if (rentState(m)) return;
+  const time = ymOf(new Date()) === m ? Date.now() : parseYm(m).getTime() + 12 * 3600000;
+  const id = addExpense(CFG.RENT, 'RENT', 'NONE', time);
+  WRITE('quit_timer_budget', 'rent_' + m, 'paid:' + id);
+}
+const skipRent = m => { if (!rentState(m)) WRITE('quit_timer_budget', 'rent_' + m, 'skip'); };
+function undoRent(m) { const s = rentState(m); if (!s) return; if (s.startsWith('paid:')) deleteExpense(s.slice(5)); WRITE('quit_timer_budget', 'rent_' + m, null); }
+function budgetFor(m) { const o = BG()['override_' + m]; return o != null && !isNaN(parseFloat(o)) ? parseFloat(o) : incomeCollected(addMonths(m, -1)); }
+const hasOverride = m => BG()['override_' + m] != null;
+const cigCount = (m, cigs) => cigs.filter(t => ymOf(new Date(t)) === m).length;
+const cigCost = (m, cigs) => cigCount(m, cigs) * CFG.PER_CIG;
+const spent = (m, cigs) => expensesIn(m).reduce((s, e) => s + e.amount, 0) + cigCost(m, cigs);
+function byCategory(m, cigs) { const r = {}; Object.keys(EXP_CATS).forEach(c => r[c] = 0); expensesIn(m).forEach(e => r[e.cat] = (r[e.cat] || 0) + e.amount); r.CIGARETTES += cigCost(m, cigs); return r; }
+function byMethod(m) { const r = {}; Object.keys(METHODS).forEach(k => r[k] = 0); expensesIn(m).forEach(e => r[e.method] = (r[e.method] || 0) + e.amount); return r; }
+function savingsHistory(cigs) { const out = []; let m = startMonth(); const cur = ymOf(new Date()); while (m < cur) { out.push([m, budgetFor(m) - spent(m, cigs)]); m = addMonths(m, 1); } return out; }
+function budgetAlerts() {
+  const today = new Date(), cur = ymOf(today), out = [];
+  for (const m of [addMonths(cur, -1), cur].filter(m => m >= startMonth())) {
+    for (const i of INCOME) {
+      if (incomeStatus(m, i.id)) continue;
+      const end = Math.min(i.to, monthLen(m));
+      if (m < cur || today.getDate() > end) out.push({ kind: 'INCOME', m, id: i.id, text: `${i.name} ${money(i.amount)} (days ${i.from}–${i.to}, ${parseYm(m).toLocaleString('en-US', { month: 'long' })})` });
+    }
+    if ((m < cur || today.getDate() > CFG.RENT_DUE_DAY) && !rentState(m)) out.push({ kind: 'RENT', m, id: 'rent', text: `Rent ${money(CFG.RENT)} not paid (due by the ${CFG.RENT_DUE_DAY}rd)` });
+  }
+  return out;
+}
+function resolveAlert(a, done) { if (a.kind === 'INCOME') setIncome(a.m, a.id, done ? 'DONE' : 'CANCELLED'); else done ? payRent(a.m) : skipRent(a.m); }
+
+// ---------------- heart insights (computed by the phone, read here) ----------------
+function heartDays() { return jsonOr(Q().days_cache, {}); }
+function effectsAll() {
+  const raw = jsonOr(Q().effects_cache, {});
+  const ev = { SMOKE: events('SMOKE'), COFFEE: events('COFFEE') };
+  const all = [...ev.SMOKE, ...ev.COFFEE];
+  const list = Object.values(raw).filter(e => (ev[e.type] || []).includes(e.time)).map(e => {
+    const w = EVT[e.type];
+    const lo = e.time - w.before * 60000, hi = e.time + w.after * 60000;
+    const others = all.filter(t => t >= lo && t <= hi).length - 1;
+    const delta = e.before != null && e.after != null ? e.after - e.before : null;
+    return { ...e, mixed: others > 0, delta };
+  });
+  return list.sort((a, b) => b.time - a.time);
+}
+function effectStats(list) {
+  const wd = list.filter(e => e.delta != null), clean = wd.filter(e => !e.mixed);
+  return { n: wd.length, avg: avg(wd.map(e => e.delta)), cleanN: clean.length, cleanAvg: avg(clean.map(e => e.delta)), peak: avg(wd.filter(e => e.peak != null).map(e => e.peak - e.before)) };
+}
+function isExerciseDay(day, manual, heart) { return manual.has(day) || ((heart[day] || {}).ex || 0) >= 10; }
+
+function recommendations() {
+  const recs = [], today = new Date(), t = ymd(today), y = ymd(addDays(today, -1));
+  const heart = heartDays(), smokes = events('SMOKE'), coffees = events('COFFEE'), start = startDate();
+  const manual = exerciseDays(), eff = effectsAll();
+  const sStats = effectStats(eff.filter(e => e.type === 'SMOKE')), cStats = effectStats(eff.filter(e => e.type === 'COFFEE'));
+  const rest = i => (heart[ymd(addDays(today, -i))] || {}).rest;
+  const lastRest = [1, 2, 3].map(rest).find(v => v != null);
+  if (lastRest > 100) recs.push(`⚠ Your resting heart rate estimate is about ${Math.round(lastRest)} bpm, which is high. If it stays above 100, or you feel chest pain, palpitations, dizziness or shortness of breath, see a doctor.`);
+  else if (lastRest >= 85) recs.push(`Your resting heart rate is about ${Math.round(lastRest)} bpm, on the high side. Regular cardio, 7–9 hours of sleep and less nicotine and caffeine usually bring it down over a few weeks.`);
+  const sy = countOn(smokes, y); const wk = avg([2, 3, 4, 5, 6, 7, 8].map(i => countOn(smokes, ymd(addDays(today, -i)))));
+  const gap = gapMinutes(start, t);
+  if (smokes.length && dayNumber(start, t) > 2) {
+    if (sy < wk - 0.5) recs.push(`Yesterday: ${sy} cigarettes, below your weekly average (${wk.toFixed(1)}). Good progress. Today's gap is ${gap} min.`);
+    else if (sy > wk + 0.5) recs.push(`Yesterday: ${sy} cigarettes, above your weekly average (${wk.toFixed(1)}). Plan for your hardest moments (after meals or coffee): water, gum, or a 5-minute walk until the craving passes.`);
+    else recs.push(`Yesterday: ${sy} cigarettes (weekly average ${wk.toFixed(1)}). Today's gap is ${gap} min. Every extra minute counts.`);
+  }
+  if (sStats.avg > 2 && sStats.n >= 3) recs.push(`Each cigarette raises your pulse by about ${Math.round(sStats.avg)} bpm for the next 30 minutes. Yesterday that was about ${sy * 30} minutes of extra work for your heart.`);
+  const cy = countOn(coffees, y);
+  if (cy >= 4) recs.push(`You had ${cy} coffees yesterday. Most healthy adults should stay under about 400 mg of caffeine a day (roughly 3–4 cups of brewed coffee). Try capping at 2–3 cups.`);
+  const late = [1, 2, 3].filter(i => { const d = ymd(addDays(today, -i)); return coffees.some(c => dayOf(c) === d && new Date(c).getHours() >= 16); }).length;
+  if (late) recs.push(`You had coffee after 4 pm on ${late} of the last 3 days. Caffeine stays in the body for hours and can disturb sleep, which raises resting heart rate. Have your last cup before 3 pm.`);
+  if (cStats.avg > 5 && cStats.n >= 3) recs.push(`Coffee raises your pulse by about ${Math.round(cStats.avg)} bpm on average. Smaller cups or half-caf would ease the load.`);
+  const rc = coffees.filter(c => Date.now() - c < 14 * DAY);
+  if (rc.length >= 3) { const f = rc.filter(c => smokes.some(s => s >= c && s <= c + 15 * 60000)).length; const pct = Math.floor(f * 100 / rc.length); if (pct >= 50) recs.push(`${pct}% of your coffees are followed by a cigarette within 15 minutes, so coffee is a trigger. Change the routine: drink it somewhere you can't smoke, or follow it with water and a short walk.`); }
+  const exWeek = [0, 1, 2, 3, 4, 5, 6].filter(i => isExerciseDay(ymd(addDays(today, -i)), manual, heart)).length;
+  recs.push(exWeek < 3 ? `You exercised on ${exWeek} of the last 7 days. Aim for 150 minutes a week of moderate activity, for example a 30-minute brisk walk on 5 days. Exercise also reduces cravings.` : `You exercised on ${exWeek} of the last 7 days. Keep it up: it's one of the best ways to lower resting heart rate.`);
+  const r7 = avg([1, 2, 3, 4, 5, 6, 7].map(rest).filter(v => v != null)), rp = avg([8, 9, 10, 11, 12, 13, 14].map(rest).filter(v => v != null));
+  if (r7 != null && rp != null) { const d = r7 - rp; if (d <= -1) recs.push(`Resting heart rate is down ${(-d).toFixed(1)} bpm compared with the week before (now about ${Math.round(r7)}).`); if (d >= 2) recs.push(`Resting heart rate is up ${d.toFixed(1)} bpm compared with last week. Common causes: poor sleep, more coffee or cigarettes, stress, dehydration or getting sick.`); }
+  if (recs.length < 3) recs.push('Drink water through the day and aim for 7–9 hours of sleep. Both help lower resting heart rate.');
+  return recs;
+}
+
+if (typeof module !== 'undefined') module.exports = { DATA, setWriter: w => { WRITE = w; }, Prayer, events, saveEvents, unlockAt, gapMinutes, dayNumber, occurrencesOn, seedTasksIfNeeded, seedBudgetIfNeeded, setTaskDone, postponeTask, addOne, addRecurring, budgetFor, spent, budgetAlerts, payRent, undoRent, addExpense, byCategory, recommendations, taskStats, ymd, savingsHistory, setIncome };
+
+</script>
+<script>
+// ===================== Quit Timer — laptop UI =====================
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const UI = {
+  tab: localStorage.getItem('qt_tab') || 'today',
+  taskDay: ymd(new Date()), prayerDay: ymd(new Date()), month: ymOf(new Date()),
+  undo: null, // {kind, value, until}
+  form: { title: '', cat: 'PERSONAL', date: ymd(new Date()), start: '', end: '', days: [] },
+  exp: { amount: '', cat: 'FOOD', method: 'CASH', note: '', sub: 'Et' },
+  qexp: { amount: '', cat: 'FOOD', method: 'CASH', note: '', sub: 'Et' },
+  alertsOpen: false, weight: '', skipped: new Set(),
+};
+const TABS = [['today', 'Today'], ['tasks', 'Tasks'], ['prayers', 'Prayers'], ['budget', 'Budget'], ['history', 'History'], ['insights', 'Insights']];
+
+function nextHalfHour() { const d = new Date(); const m = d.getHours() * 60 + d.getMinutes(); return ((Math.floor(m / 30) + 1) * 30) % 1440; }
+const toHHMM = m => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+const fromHHMM = s => { if (!s) return null; const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+function fmtRemaining(ms) { const t = Math.ceil(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`; }
+const dayTitle = d => { const t = ymd(new Date()); if (d === t) return 'Today'; if (d === ymd(addDays(new Date(), 1))) return 'Tomorrow'; if (d === ymd(addDays(new Date(), -1))) return 'Yesterday'; return parseYmd(d).toLocaleDateString('en-US', { weekday: 'long' }); };
+const longDate = d => parseYmd(d).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+const monthName = m => parseYm(m).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+// ---------------- rendering ----------------
+function render() {
+  if (!window.SIGNED_IN) return;
+  rollover();
+  $('#nav').innerHTML = TABS.map(([k, l]) => `<button class="nav ${UI.tab === k ? 'on' : ''}" data-act="tab" data-arg="${k}">${l}</button>`).join('');
+  const views = { today: vToday, tasks: vTasks, prayers: vPrayers, budget: vBudget, history: vHistory, insights: vInsights };
+  $('#main').innerHTML = (views[UI.tab] || vToday)();
+  tick();
+}
+const card = (title, body, extra = '') => `<section class="card ${extra}">${title ? `<h3>${title}</h3>` : ''}${body}</section>`;
+const stat = (label, value, cls = '') => `<div class="stat ${cls}"><b>${value}</b><span>${label}</span></div>`;
+const bar = (label, v, max, color, text) => `<div class="barrow"><span>${esc(label)}</span><div class="bar"><i style="width:${Math.max(2, Math.min(100, v / max * 100))}%;background:${color}"></i></div><em>${text}</em></div>`;
+
+function catOptions(sel) { return Object.entries(CATS).filter(([k]) => k !== 'PRAYER').map(([k, c]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${c.label}</option>`).join(''); }
+function daysPicker(days, attr) { return `<div class="days">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((l, i) => `<button type="button" class="day ${days.includes(i + 1) ? 'on' : ''}" data-act="${attr}" data-arg="${i + 1}">${l}</button>`).join('')}</div>`; }
+
+function taskForm() {
+  const f = UI.form;
+  if (!f.start) f.start = toHHMM(nextHalfHour());
+  return `<div class="form">
+    <input id="f_title" placeholder="Task" value="${esc(f.title)}" data-bind="form.title">
+    <div class="row">
+      <select data-bind="form.cat">${catOptions(f.cat)}</select>
+      ${f.days.length ? '' : `<input type="date" value="${f.date}" data-bind="form.date">`}
+      <label>from <input type="time" value="${f.start}" data-bind="form.start"></label>
+      <label>to <input type="time" value="${f.end}" data-bind="form.end"></label>
+    </div>
+    <div class="row"><span class="muted">Repeat</span>${daysPicker(f.days, 'formday')}</div>
+    <button class="btn" data-act="addtask">Add to schedule</button>
+  </div>`;
+}
+
+const fmtDur = m => m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}` : `${m}m`;
+function ringSvg(frac, color, size, stroke, label) {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, frac || 0));
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--line2)" stroke-width="${stroke}"/>` +
+    `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>` +
+    (label ? `<text x="50%" y="54%" text-anchor="middle" font-size="${size > 80 ? 15 : 11}" fill="var(--text)">${label}</text>` : '') + `</svg>`;
+}
+const ringStat = (frac, val, label, color) => `<div class="ring">${ringSvg(frac, color, 52, 6, val)}<span>${label}</span></div>`;
+function weekStrip(cigs, start) {
+  const t = new Date(), mon = addDays(t, -((t.getDay() + 6) % 7)), today = ymd(t);
+  return `<div class="card week">${[0, 1, 2, 3, 4, 5, 6].map(i => {
+    const d = ymd(addDays(mon, i)); let dot = '';
+    if (d < today && d > start) { const a = countOn(cigs, d), b = countOn(cigs, ymd(addDays(parseYmd(d), -1))); dot = a < b ? 'var(--accent)' : a === b ? 'var(--amber)' : 'var(--warn)'; }
+    return `<button class="wd ${d === today ? 'on' : ''}" data-act="openday" data-arg="${d}"><span>${parseYmd(d).toLocaleDateString('en-US', { weekday: 'short' })}</span><b>${parseYmd(d).getDate()}</b><i style="background:${dot || 'transparent'}"></i></button>`;
+  }).join('')}</div>`;
+}
+function expenseForm(prefix) {
+  const e = UI[prefix];
+  return `<div class="row"><input type="number" min="0" step="1" placeholder="Amount (EGP)" value="${esc(e.amount)}" data-bind="${prefix}.amount" style="width:130px">
+    <select data-bind="${prefix}.cat" data-rerender="1">${MANUAL_CATS.map(c => `<option value="${c}" ${c === e.cat ? 'selected' : ''}>${EXP_CATS[c][0]}</option>`).join('')}</select>
+    ${e.cat === 'BILLS' ? `<select data-bind="${prefix}.sub">${BILL_TYPES.map(b => `<option ${b === e.sub ? 'selected' : ''}>${b}</option>`).join('')}</select>` : ''}
+    <select data-bind="${prefix}.method">${PICK_METHODS.map(k => `<option value="${k}" ${k === e.method ? 'selected' : ''}>${METHODS[k]}</option>`).join('')}</select>
+    <input placeholder="Note (optional)" value="${esc(e.note)}" data-bind="${prefix}.note" style="flex:1;min-width:120px">
+    <button class="btn" data-act="addexp" data-arg="${prefix}">Add</button></div>`;
+}
+function dayTimeline(now) {
+  const today = ymd(new Date()), occs = occurrencesOn(today);
+  const items = occs.filter(o => !o.isWird);
+  if (!items.length) return '<p class="muted">Nothing planned yet. Click + Add.</p>';
+  let h = '', placedNow = false, prevEnd = null;
+  for (const o of items) {
+    if (!placedNow && o.start > now) { h += nowLine(now); placedNow = true; }
+    if (prevEnd && o.start - prevEnd >= 3600000) h += `<button class="slot free" data-act="addat" data-arg="${new Date(prevEnd).getHours()}">free ${fmtDur(Math.round((o.start - prevEnd) / 60000))} · click to add</button>`;
+    if (o.isPrayer) h += `<div class="tl prayer-tl ${o.done ? 'done' : ''}"><small>${fmtTime(o.start)}</small> ${esc(o.title)}</div>`;
+    else h += `<div class="tl ${isLate(o, now) ? 'late' : ''} ${o.done ? 'done' : ''}" style="--c:${CATS[o.cat].color};min-height:${o.dur ? 30 + Math.min(120, o.dur) / 2 : 30}px" data-act="edit" data-arg="${o.key}"><b>${esc(o.title)}</b><small>${CATS[o.cat].label} · ${fmtTime(o.start)}${o.dur ? '–' + fmtTime(o.start + o.dur * 60000) : ''}</small></div>`;
+    prevEnd = Math.max(prevEnd || 0, o.start + Math.max(o.dur, 15) * 60000);
+  }
+  if (!placedNow) h += nowLine(now);
+  return h;
+}
+const nowLine = now => `<div class="nowline"><i></i><span>${fmtTime(now)}</span></div>`;
+
+function vToday() {
+  const now = Date.now(), today = ymd(new Date()), start = startDate();
+  const cigs = events('SMOKE'), coffees = events('COFFEE'), ex = exerciseDays();
+  const n = dayNumber(start, today), quit = isQuit(start, today);
+  const ua = unlockAt(cigs, start, now), gap = gapMinutes(start, today);
+  const occs = occurrencesOn(today), tasks = occs.filter(o => !o.isPrayer), salah = occs.filter(o => o.isSalah);
+  const m = ymOf(new Date()), sp = spent(m, cigs), bud = budgetFor(m), safe = safeToday(m, cigs);
+  const alerts = budgetAlerts(), lastC = cigs.filter(t => dayOf(t) === today).pop();
+  const wm = wirdMonthTotal(m), wt = wirdTarget(m);
+  const heart = heartDays(); const rest = [0, 1, 2, 3].map(i => (heart[ymd(addDays(new Date(), -i))] || {}).rest).find(v => v != null);
+  const cur = tasks.find(o => !o.done && o.dur > 0 && o.start <= now && now < o.start + o.dur * 60000);
+  const nextP = occs.filter(o => o.isPrayer && !o.done && o.start > now).sort((a, b) => a.start - b.start)[0];
+  const top = monthMinutesByTitle().slice(0, 3), bc = monthMinutesByCategory(), bcTotal = Object.values(bc).reduce((a, b) => a + b, 0);
+  const streak = fewerStreak(cigs, start), tip = recommendations()[0];
+  const hr = new Date().getHours(), hello = hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+  const prog = ua && lastC ? Math.min(1, (now - lastC) / (gap * 60000)) : 1;
+
+  let h = `<div class="head row"><div><h1>${hello}${window.USER_NAME ? ', ' + esc(window.USER_NAME) : ''}</h1>
+    <p class="muted">${new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })} · ${quit ? 'smoke-free' : 'day ' + n}${streak ? ` · ${streak}-day streak under the day before` : ''}</p></div>
+    ${alerts.length ? `<button class="pill warnpill" data-act="togglealerts">⚠ ${alerts.length} need attention ${UI.alertsOpen ? '▴' : '▾'}</button>` : ''}</div>`;
+  if (alerts.length && UI.alertsOpen) h += card('', alerts.map((a, i) => `<div class="line warn"><span>${esc(a.text)}</span><button class="link ok" data-act="alert" data-arg="${i}:1">${a.kind === 'RENT' ? 'Paid' : 'Done'}</button><button class="link" data-act="alert" data-arg="${i}:0">${a.kind === 'RENT' ? 'Skip' : 'Cancel'}</button></div>`).join(''));
+  h += weekStrip(cigs, start);
+  h += `<div class="grid2"><div>`;
+  // cooldown card
+  h += `<section class="card">${quit ? `<p class="muted">Smoke-free</p><b class="huge ok">${n - QUIT_DAY + 1} days without cigarettes</b>` : `
+    <p class="muted small" style="margin:0 0 6px">Next cigarette cooldown</p>
+    <div class="cool"><button id="smoke" class="ringbtn" data-act="smoke" ${ua ? 'disabled' : ''}>${ringSvg(prog, ua ? 'var(--warn)' : 'var(--accent)', 130, 10, '')}
+      <div class="rc">${ua ? `<small class="warn">LOCKED</small><b id="lock">${fmtRemaining(ua - now)}</b>` : `<b class="ok">I smoked</b><small>click to log</small>`}</div></button>
+      <div><b>${ua ? 'Opens at ' + fmtTime(ua) : 'Unlocked'}</b><p class="muted small">Gap today ${gap} min<br>Phase ${phaseOf(n)} · +${increaseOnDay(n)} min/day${nextPhaseDay(n) ? `<br>${nextPhaseDay(n) === QUIT_DAY ? 'Quit day' : 'Speeds up'} ${parseYmd(dateOfDay(start, nextPhaseDay(n))).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</p></div></div>
+    ${UI.undo && UI.undo.kind === 'SMOKE' && UI.undo.until > now ? `<button class="link amber" data-act="undo">Clicked by mistake? Undo</button>` : ''}
+    <div class="stats">${stat('Today', countOn(cigs, today))}${stat('Yesterday', countOn(cigs, ymd(addDays(new Date(), -1))))}${stat('Last', lastC ? fmtTime(lastC) : '—')}</div>`}
+    <div class="qa">
+      <button class="qbtn" data-act="${UI.undo && UI.undo.kind === 'COFFEE' && UI.undo.until > now ? 'undo' : 'coffee'}">☕ ${UI.undo && UI.undo.kind === 'COFFEE' && UI.undo.until > now ? 'Undo coffee' : 'Coffee · ' + countOn(coffees, today)}</button>
+      <button class="qbtn ${ex.has(today) ? 'active' : ''}" data-act="exercise">${ex.has(today) ? '✓ Exercised' : '🏃 Exercise'}</button>
+    </div></section>`;
+  h += card('', `<div class="rings">${ringStat(salah.filter(p => p.done).length / Math.max(1, salah.length), `${salah.filter(p => p.done).length}/${salah.length}`, 'Prayers', 'var(--accent)')}
+    ${ringStat(tasks.filter(o => o.done).length / Math.max(1, tasks.length), `${tasks.filter(o => o.done).length}/${tasks.length}`, 'Tasks', '#6CA0FF')}
+    ${ringStat(wm / Math.max(1, wt), wm, 'Wird/' + wt, '#C084FC')}
+    ${ringStat(bud > 0 ? sp / bud : 0, bud > 0 ? Math.round(sp * 100 / bud) + '%' : '—', 'Budget', 'var(--amber)')}
+    ${ringStat(rest ? (rest - 40) / 60 : 0, rest ? Math.round(rest) : '—', 'Rest HR', '#F472B6')}</div>`);
+  if (cur || nextP) h += card('', (cur ? `<div class="line"><span class="pill" style="background:#3A1F24;color:var(--warn)">Now</span><span><b>${esc(cur.title)}</b></span><small class="muted">${fmtDur(Math.round((cur.start + cur.dur * 60000 - now) / 60000))} left</small></div>
+      <div class="bar"><i style="width:${Math.min(100, (now - cur.start) / (cur.dur * 600))}%;background:${CATS[cur.cat].color}"></i></div>` : '') +
+    (nextP ? `<div class="line" style="margin-top:6px"><span class="pill" style="background:#173A30;color:var(--accent)">Next prayer</span><span>${esc(nextP.title)} · ${fmtTime(nextP.start)}</span><small class="muted">in ${fmtDur(Math.round((nextP.start - now) / 60000))}</small></div>` : ''));
+  h += card(`Top 3 tasks · ${new Date().toLocaleDateString('en-US', { month: 'long' })}`, top.length ? top.map(t => bar(t.title, t.min, top[0].min, CATS[t.cat].color, fmtDur(t.min))).join('') +
+    `<p class="muted small" style="margin:10px 0 4px">By category</p><div class="stack">${Object.entries(bc).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<i style="width:${v / bcTotal * 100}%;background:${CATS[c].color}" title="${CATS[c].label} ${fmtDur(v)}"></i>`).join('')}</div>
+    <p class="muted small">${Object.entries(bc).sort((a, b) => b[1] - a[1]).map(([c, v]) => `${CATS[c].label} ${fmtDur(v)}`).join(' · ')}</p>` : '<p class="muted">Mark timed tasks as Done to see where your time goes.</p>');
+  h += `</div><div>`;
+  h += card(`<span style="display:flex;justify-content:space-between">Today <small class="muted" style="font-weight:400">click a block to edit</small></span>`, `<div class="timeline">${dayTimeline(now)}</div>`);
+  h += card('', `<div class="line"><span><small class="muted">Spent this month</small><br><b class="huge">${money(sp)}</b> <small class="muted">of ${money(bud)}</small></span><span style="text-align:right;flex:none"><small class="muted">Safe today</small><br><b class="${safe <= 0 ? 'warn' : 'ok'}">${money(safe)}</b></span></div>
+    <div class="bar big"><i style="width:${bud > 0 ? Math.min(100, sp / bud * 100) : 0}%;background:${bud > 0 && bud - sp < bud * CFG.WARN ? 'var(--warn)' : 'var(--amber)'}"></i></div>${expenseForm('qexp')}`);
+  if (tip) h += `<section class="card tip">💡 ${esc(tip)}</section>`;
+  h += `</div></div>`;
+  return h;
+}
+
+function taskRow(o, now) {
+  const late = isLate(o, now);
+  const t = fmtTime(o.start) + (o.dur ? ' – ' + fmtTime(o.start + o.dur * 60000) : '');
+  return `<div class="task ${late ? 'late' : ''} ${o.done ? 'done' : ''}" style="border-left-color:${CATS[o.cat].color};min-height:${o.dur ? 54 + Math.min(120, o.dur) / 2 : 54}px">
+    <div class="tmain" data-act="edit" data-arg="${o.key}"><small>${t}${o.overdue && !o.done ? ' · overdue' : ''}${o.recId ? ' · repeats' : ''}</small><b>${esc(o.title)}</b></div>
+    ${o.done ? `<button class="link ok" data-act="undone" data-arg="${o.key}">✓ Done</button>` : `<button class="link ok" data-act="done" data-arg="${o.key}">Done</button><button class="link amber" data-act="postpone" data-arg="${o.key}">Postpone</button>`}
+  </div>`;
+}
+
+function vTasks() {
+  const now = Date.now(), d = UI.taskDay, occs = occurrencesOn(d).filter(o => !o.isPrayer);
+  const curH = d === ymd(new Date()) ? new Date().getHours() : -1;
+  const early = occs.filter(o => new Date(o.start).getHours() < 9);
+  let rows = '';
+  if (early.length) rows += `<div class="hour"><span>Early</span><div>${early.map(o => taskRow(o, now)).join('')}</div></div>`;
+  for (let h = 9; h <= 23; h++) {
+    const items = occs.filter(o => new Date(o.start).getHours() === h);
+    let inner;
+    if (h === curH) {
+      const past = items.filter(o => o.start <= now), fut = items.filter(o => o.start > now);
+      inner = past.map(o => taskRow(o, now)).join('') + nowLine(now) + fut.map(o => taskRow(o, now)).join('') + (items.length ? '' : `<button class="slot" data-act="addat" data-arg="${h}">+</button>`);
+    } else inner = items.length ? items.map(o => taskRow(o, now)).join('') : `<button class="slot" data-act="addat" data-arg="${h}">+</button>`;
+    rows += `<div class="hour ${h === curH ? 'now' : ''}"><span>${fmtMin(h * 60).replace(':00', '')}</span><div>${inner}</div></div>`;
+  }
+  return `<div class="head row"><h1>Tasks</h1><button class="btn" data-act="addat" data-arg="-1">+ Add</button></div>
+    ${dayNav(d, 'taskday')}
+    ${UI.undo && UI.undo.kind === 'TASK' && UI.undo.until > now ? `<div class="card line"><span>Marked done</span><button class="link amber" data-act="undo">Undo</button></div>` : ''}
+    <div class="hours">${rows}</div>`;
+}
+function dayNav(d, act) {
+  return `<div class="daynav"><button class="link" data-act="${act}" data-arg="-1">◀</button><div><b>${dayTitle(d)}</b><small class="muted">${longDate(d)}</small></div><button class="link" data-act="${act}" data-arg="1">▶</button>${d !== ymd(new Date()) ? `<button class="link" data-act="${act}" data-arg="0">Back to today</button>` : ''}</div>`;
+}
+
+function vPrayers() {
+  const now = Date.now(), d = UI.prayerDay, items = occurrencesOn(d).filter(o => o.isPrayer);
+  const salah = items.filter(o => !o.isWird), next = d === ymd(new Date()) ? items.find(p => p.start > now && !p.done) : null;
+  const m = d.slice(0, 7), wv = wirdVerses();
+  return `<div class="head"><h1>Prayers</h1><p class="muted">Cairo · Egyptian General Authority of Survey</p></div>${dayNav(d, 'prayerday')}
+  <div class="stats">${stat('prayers', salah.filter(p => p.done).length + ' / ' + salah.length)}${stat('wird · month', wirdMonthTotal(m) + ' / ' + wirdTarget(m))}${stat('next', next ? esc(next.title) + ' ' + fmtTime(next.start) : '—')}</div>
+  ${items.map(p => {
+    const late = isLate(p, now);
+    if (p.isWird) return `<div class="prayer ${p.done ? 'done' : late ? 'late' : ''}" style="cursor:default"><span><b>${esc(p.title)}</b><small>${fmtTime(p.start)}${p.done ? ' · ' + (wv[d] || 0) + ' verses ✓' : ''}</small></span>
+      <span class="row">${p.done ? `<button class="link amber" data-act="wird" data-arg="undo">Undo</button>` : `<input type="number" min="1" id="wirdn" placeholder="Verses read" style="width:120px"><button class="btn" data-act="wird" data-arg="done">Done</button>`}</span></div>
+      <p id="wirderr" class="warn small"></p>`;
+    return `<button class="prayer ${p.done ? 'done' : late ? 'late' : ''} ${next && next.key === p.key ? 'next' : ''}" data-act="${p.done ? 'undone' : 'done'}" data-arg="${p.key}"><span><b>${esc(p.title)}</b><small>${fmtTime(p.start)}</small></span><i>${p.done ? '✓' : ''}</i></button>`;
+  }).join('')}
+  <p class="muted">Click a prayer to mark it done. For the wird, enter the verses you read, then Done. All-time wird: ${wirdAllTime()} verses.</p>`;
+}
+
+function vBudget() {
+  const m = UI.month, cur = ymOf(new Date()), cigs = events('SMOKE');
+  const total = budgetFor(m), sp = spent(m, cigs), left = total - sp, low = total > 0 && left < total * CFG.WARN;
+  const bc = byCategory(m, cigs), bm = byMethod(m), exps = expensesIn(m), n = cigCount(m, cigs), sav = savingsHistory(cigs);
+  const today = new Date();
+  const income = INCOME.map(i => {
+    const st = incomeStatus(m, i.id), end = Math.min(i.to, monthLen(m));
+    const overdue = !st && (m < cur || (m === cur && today.getDate() > end));
+    const act = !st ? `<button class="link ok" data-act="inc" data-arg="${i.id}:DONE">Done</button><button class="link" data-act="inc" data-arg="${i.id}:CANCELLED">Cancel</button>`
+      : `<button class="link ${st === 'DONE' ? 'ok' : ''}" data-act="inc" data-arg="${i.id}:">${st === 'DONE' ? '✓ Received' : 'Cancelled'}</button>`;
+    return `<div class="line ${overdue ? 'warn' : ''}"><span><b>${esc(i.name)}</b><small> ${money(i.amount)} · days ${i.from}–${i.to}</small></span>${act}</div>`;
+  }).join('');
+  const rs = rentState(m);
+  const maxC = Math.max(...Object.values(bc), 0), maxM = Math.max(...Object.values(bm), 0);
+  return `<div class="head"><h1>Budget</h1></div>
+  <div class="daynav"><button class="link" data-act="month" data-arg="-1">◀</button><div><b>${monthName(m)}</b></div><button class="link" data-act="month" data-arg="1">▶</button></div>
+  <div class="grid2">
+  <div>
+  ${card('This month', `<div class="stats">${stat('budget', money(total))}${stat('spent', money(sp))}${stat('left', money(left), low ? 'warn' : '')}</div>
+    <div class="bar big"><i style="width:${total > 0 ? Math.max(1, Math.min(100, sp / total * 100)) : 0}%;background:${low ? 'var(--warn)' : 'var(--accent)'}"></i></div>
+    ${low ? '<p class="warn">⚠ Less than 20% of the budget is left.</p>' : ''}
+    <p class="muted small">${hasOverride(m) ? 'Budget set by hand for this month.' : 'Budget = income collected in ' + monthName(addMonths(m, -1)) + '.'}</p>
+    <p class="muted small">Cigarettes: ${n} (${(n / CFG.PACK_SIZE).toFixed(1)} packs) = ${money(n * CFG.PER_CIG)}</p>`)}
+  ${card('Add expense', expenseForm('exp') + `<p class="muted small">Cigarettes are added automatically from the counter (${money(CFG.PER_CIG)} each). Safe to spend today: ${money(safeToday(m, cigs))}</p>`)}
+  ${card('Income · ' + parseYm(m).toLocaleDateString('en-US', { month: 'long' }), income + `<p class="muted small">Collected: ${money(incomeCollected(m))} → budget for ${monthName(addMonths(m, 1))}</p>`)}
+  ${card('Rent', `<div class="line"><span><b>${money(CFG.RENT)}</b><small> due by day ${CFG.RENT_DUE_DAY}</small></span>${!rs ? `<button class="link ok" data-act="rent" data-arg="pay">Paid</button><button class="link" data-act="rent" data-arg="skip">Skip</button>` : `<button class="link ${rs.startsWith('paid') ? 'ok' : ''}" data-act="rent" data-arg="undo">${rs.startsWith('paid') ? '✓ Paid' : 'Skipped'}</button>`}</div>`)}
+  </div><div>
+  ${card('Spending by category', maxC > 0 ? Object.entries(bc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([c, v]) => bar(EXP_CATS[c][0], v, maxC, EXP_CATS[c][1], money(v))).join('') : '<p class="muted">No spending yet.</p>')}
+  ${card('By payment method', maxM > 0 ? Object.entries(bm).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => bar(k === 'NONE' ? 'Rent / auto' : METHODS[k], v, maxM, 'var(--amber)', money(v))).join('') : '<p class="muted">No expenses yet.</p>')}
+  ${Object.keys(billsBreakdown(m)).length ? card('Bills by type', (() => { const bb = billsBreakdown(m), mx = Math.max(...Object.values(bb)); return Object.entries(bb).sort((a, b) => b[1] - a[1]).map(([k, v]) => bar(k, v, mx, EXP_CATS.BILLS[1], money(v))).join(''); })()) : ''}
+  ${card('Expenses', exps.length ? exps.map(e => `<div class="line clickable" data-act="editexp" data-arg="${e.id}"><i class="dot" style="background:${EXP_CATS[e.cat][1]}"></i><span>${EXP_CATS[e.cat][0]}${e.sub ? ' · ' + esc(e.sub) : ''} · ${METHODS[e.method] || e.method}<small class="muted"> ${new Date(e.time).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>${e.note ? `<br><small class="muted">${esc(e.note)}</small>` : ''}</span><b>${money(e.amount)}</b></div>`).join('') : '<p class="muted">Nothing added this month.</p>')}
+  ${card('Savings', `<b class="huge ${sav.reduce((s, x) => s + x[1], 0) >= 0 ? 'ok' : 'warn'}">${money(sav.reduce((s, x) => s + x[1], 0))}</b><p class="muted small">What was left at the end of each month. Not added to next month's income.</p>` +
+    (sav.length ? sav.slice().reverse().map(([mm, v]) => `<div class="line"><span>${monthName(mm)}</span><b class="${v >= 0 ? 'ok' : 'warn'}">${money(v)}</b></div>`).join('') : `<p class="muted">Your first month ends on ${new Date(today.getFullYear(), today.getMonth() + 1, 0).toLocaleDateString('en-US', { day: 'numeric', month: 'long' })}.</p>`))}
+  </div></div>`;
+}
+
+function vHistory() {
+  const cigs = events('SMOKE'), coffees = events('COFFEE'), ex = exerciseDays(), heart = heartDays(), start = startDate();
+  const days = []; for (let i = 0; i < 60; i++) { const d = ymd(addDays(new Date(), -i)); if (d < start && !heart[d]) break; days.push(d); }
+  const last14 = days.slice(0, 14).reverse(), max = Math.max(1, ...last14.map(d => countOn(cigs, d)));
+  const chart = `<div class="cols">${last14.map(d => { const c = countOn(cigs, d); return `<div title="${d}: ${c}"><i style="height:${c ? c / max * 100 : 2}%;background:${isExerciseDay(d, ex, heart) ? 'var(--accent)' : 'var(--amber)'}"></i><small>${c}</small></div>`; }).join('')}</div><p class="muted small"><i class="dot" style="background:var(--amber)"></i> no exercise &nbsp; <i class="dot" style="background:var(--accent)"></i> exercise day</p>`;
+  return `<div class="head"><h1>History</h1></div>${card('Cigarettes per day, last 14 days', chart)}
+  ${card('', `<table><tr><th>Day</th><th>Gap</th><th>Cigarettes</th><th>Coffee</th><th>Exercise</th><th>HR avg</th><th>Resting</th></tr>${days.map(d => { const h = heart[d] || {}; return `<tr><td>${d === ymd(new Date()) ? 'Today' : parseYmd(d).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${gapMinutes(start, d)} min</td><td><b>${countOn(cigs, d)}</b></td><td>${countOn(coffees, d)}</td><td>${isExerciseDay(d, ex, heart) ? '✓' : ''}</td><td>${h.avg != null ? Math.round(h.avg) : '—'}</td><td>${h.rest != null ? Math.round(h.rest) : '—'}</td></tr>`; }).join('')}</table>`)}`;
+}
+
+function svgLine(series, markers) {
+  const all = series.flatMap(s => s.values).filter(v => v != null);
+  if (!all.length) return '<p class="muted">No heart data yet. The phone reads it from Health Connect and syncs it here.</p>';
+  const lo = Math.min(...all) - 3, hi = Math.max(...all) + 3, W = 600, H = 160, n = series[0].values.length, sx = W / Math.max(1, n - 1);
+  const y = v => (H - 10) * (1 - (v - lo) / (hi - lo));
+  let g = '';
+  for (const s of series) {
+    let p = '', on = false;
+    s.values.forEach((v, i) => { if (v == null) { on = false; return; } p += (on ? 'L' : 'M') + (i * sx).toFixed(1) + ',' + y(v).toFixed(1); on = true; g += `<circle cx="${i * sx}" cy="${y(v)}" r="2.5" fill="${s.color}"/>`; });
+    g += `<path d="${p}" stroke="${s.color}" stroke-width="2.5" fill="none"/>`;
+  }
+  markers.forEach((m, i) => { if (m) g += `<circle cx="${i * sx}" cy="${H - 3}" r="3" fill="#6CA0FF"/>`; });
+  return `<small class="muted">${Math.round(hi)} bpm</small><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="chart">${g}</svg><small class="muted">${Math.round(lo)} bpm</small>
+  <p class="muted small">${series.map(s => `<i class="dot" style="background:${s.color}"></i> ${s.name}`).join(' &nbsp; ')} &nbsp; <i class="dot" style="background:#6CA0FF"></i> exercise day</p>`;
+}
+function svgDelta(list) {
+  const data = list.filter(e => e.delta != null).sort((a, b) => a.time - b.time).slice(-30);
+  if (!data.length) return '<p class="muted">No heart-rate data around these events yet.</p>';
+  const mx = Math.max(5, ...data.map(e => Math.abs(e.delta))), W = 600, H = 140, mid = H / 2, sw = W / data.length;
+  const g = data.map((e, i) => { const h = Math.max(2, mid * Math.abs(e.delta) / mx), c = e.delta >= 0 ? '#FF6B5B' : '#4FD1A5'; return `<rect x="${i * sw + sw * 0.2}" y="${e.delta >= 0 ? mid - h : mid}" width="${sw * 0.6}" height="${h}" rx="3" fill="${c}" opacity="${e.mixed ? 0.35 : 1}"><title>${new Date(e.time).toLocaleString()}: ${e.delta > 0 ? '+' : ''}${e.delta.toFixed(0)} bpm</title></rect>`; }).join('');
+  return `<small class="muted">+${Math.round(mx)} bpm</small><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="chart"><line x1="0" y1="${mid}" x2="${W}" y2="${mid}" stroke="#ffffff55" stroke-width="2"/>${g}</svg><small class="muted">−${Math.round(mx)} bpm</small>`;
+}
+const sgn = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1);
+function effectCard(title, sub, list) {
+  const s = effectStats(list);
+  return card(title, `<p class="muted small">${sub}</p>${svgDelta(list)}<div class="stats">${stat('avg change', sgn(s.avg))}${stat('clean only', sgn(s.cleanAvg))}${stat('peak rise', sgn(s.peak))}</div><p class="muted small">${s.n} events with data · ${s.cleanN} without another cigarette/coffee in the window</p>`);
+}
+function vInsights() {
+  const heart = heartDays(), ex = exerciseDays(), eff = effectsAll();
+  const days = []; for (let i = 59; i >= 0; i--) days.push(ymd(addDays(new Date(), -i)));
+  const withH = days.slice(0, -1).filter(d => (heart[d] || {}).n > 0);
+  const exD = withH.filter(d => isExerciseDay(d, ex, heart)), oth = withH.filter(d => !isExerciseDay(d, ex, heart));
+  const rEx = avg(exD.map(d => heart[d].rest).filter(v => v != null)), rOt = avg(oth.map(d => heart[d].rest).filter(v => v != null));
+  const ts = taskStats(7);
+  const cmp = (a, b) => { const mx = Math.max(a || 0, b || 0); return mx ? bar('Exercise days', a || 0, mx, 'var(--accent)', a != null ? a.toFixed(1) + ' bpm' : '—') + bar('Other days', b || 0, mx, 'var(--amber)', b != null ? b.toFixed(1) + ' bpm' : '—') : '<p class="muted">Not enough data yet.</p>'; };
+  return `<div class="head"><h1>Insights</h1><p class="muted">Heart data is read by the phone (Health Connect) and synced here.</p></div>
+  ${card("Today's recommendations", recommendations().map(r => `<p>• ${esc(r)}</p>`).join('') + '<p class="muted small">General guidance, not medical advice.</p>')}
+  <div class="grid2"><div>
+  ${weightCard()}
+  ${card('Tasks & prayers, last 7 days', ts.total ? `<b class="huge">${Math.floor(ts.done * 100 / ts.total)}%</b> <span class="muted">${ts.done} of ${ts.total} tasks done</span><p class="muted">Prayers marked done: ${ts.prayersDone} of ${ts.prayersTotal}</p>${Object.entries(ts.byCat).filter(([, [, t]]) => t).map(([c, [d, t]]) => bar(CATS[c].label, d, t, CATS[c].color, d + '/' + t)).join('')}` : '<p class="muted">No tasks due yet.</p>')}
+  ${card('Heart rate, last 60 days', svgLine([{ name: 'daily average', color: '#E8A24A', values: days.map(d => (heart[d] || {}).avg ?? null) }, { name: 'resting (est.)', color: '#4FD1A5', values: days.map(d => (heart[d] || {}).rest ?? null) }], days.map(d => isExerciseDay(d, ex, heart))))}
+  ${card('Exercise → resting heart rate', `<p class="muted small">${exD.length} exercise days, ${oth.length} other days with heart data</p>${cmp(rEx, rOt)}`)}
+  </div><div>
+  ${effectCard('Cigarettes → heart rate', 'Average pulse 20 min before vs 30 min after each cigarette', eff.filter(e => e.type === 'SMOKE'))}
+  ${effectCard('Coffee → heart rate', 'Average pulse 20 min before vs 60 min after each coffee', eff.filter(e => e.type === 'COFFEE'))}
+  </div></div>`;
+}
+
+function weightCard() {
+  const w = weights(), keys = Object.keys(w).sort(), last = keys.length ? w[keys[keys.length - 1]] : null;
+  let body = '';
+  if (last == null) body = '<p class="muted">No weight yet. It comes from your smart scale through the phone (Health Connect), or enter it below.</p>';
+  else {
+    const lost = WEIGHT_START - last, left = Math.max(0, last - WEIGHT_TARGET);
+    body = `<div class="stats">${stat('now', last.toFixed(1))}${stat('lost', lost.toFixed(1))}${stat('left', left.toFixed(1))}</div>
+      <div class="bar big"><i style="width:${Math.max(1, Math.min(100, lost / (WEIGHT_START - WEIGHT_TARGET) * 100))}%;background:var(--accent)"></i></div>`;
+    const first = keys[0], days = Math.round((parseYmd(keys[keys.length - 1]) - parseYmd(first)) / DAY);
+    if (days >= 7 && w[first] > last && left > 0) { const perDay = (w[first] - last) / days; body += `<p class="muted small">Pace ${(perDay * 7).toFixed(2)} kg/week · reach ${WEIGHT_TARGET} kg around ${addDays(parseYmd(keys[keys.length - 1]), Math.round(left / perDay)).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>`; }
+    if (keys.length >= 2) body += svgLine([{ name: 'weight (kg)', color: '#4FD1A5', values: keys.map(k => w[k]) }], []);
+  }
+  return card(`Weight · goal ${WEIGHT_TARGET} kg`, body + `<div class="row" style="margin-top:8px"><input type="number" step="0.1" placeholder="Today's weight (kg)" value="${esc(UI.weight)}" data-bind="weight.v" id="wkg"><button class="btn" data-act="saveweight">Save</button></div>`);
+}
+
+function checkInDialog() {
+  const items = checkIns().filter(c => !UI.skipped.has(c.o.key));
+  if (!items.length || document.querySelector('dialog')) return;
+  dialog(`<h3>Quick check-in</h3>${items.map((c, i) => `<div style="margin-bottom:8px"><b>${esc(c.q)}</b><br><small class="muted">${fmtTime(c.o.start)}${c.o.dur ? ' – ' + fmtTime(c.o.start + c.o.dur * 60000) : ''}</small><div class="row">
+      <button type="button" class="link ok" data-ci="done" data-i="${i}">${c.prayer ? 'Yes, done' : 'Done'}</button>
+      ${c.prayer ? '' : `<button type="button" class="link amber" data-ci="later" data-i="${i}">Postpone</button>`}
+      <button type="button" class="link" data-ci="skip" data-i="${i}">${c.prayer ? 'Not yet' : 'Not done'}</button></div></div>`).join('')}
+    <button class="btn" value="close">Close</button>`, d => {
+    d.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-ci]'); if (!b) return;
+      const c = items[+b.dataset.i]; b.closest('div[style]').style.opacity = 0.4;
+      if (b.dataset.ci === 'done') setTaskDone(c.o.key, true);
+      else if (b.dataset.ci === 'skip') UI.skipped.add(c.o.key);
+      else { d.close(); UI.skipped.add(c.o.key); setTimeout(() => postponeDialog(c.o.key), 50); }
+    });
+    d.addEventListener('close', () => { items.forEach(c => UI.skipped.add(c.o.key)); render(); });
+  });
+}
+window.addEventListener('focus', () => { if (window.SIGNED_IN && window.SEEDED) checkInDialog(); });
+
+function editExpenseDialog(id) {
+  const e = expenses().find(x => x.id === id); if (!e) return;
+  dialog(`<h3>Edit expense</h3>
+    <div class="row"><input type="number" id="ee_amt" value="${e.amount}" style="width:130px">
+    <select id="ee_cat">${MANUAL_CATS.map(c => `<option value="${c}" ${c === e.cat ? 'selected' : ''}>${EXP_CATS[c][0]}</option>`).join('')}</select>
+    <select id="ee_sub">${BILL_TYPES.map(b => `<option ${b === (e.sub || 'Et') ? 'selected' : ''}>${b}</option>`).join('')}</select>
+    <select id="ee_m">${PICK_METHODS.map(k => `<option value="${k}" ${k === e.method ? 'selected' : ''}>${METHODS[k]}</option>`).join('')}</select></div>
+    <input id="ee_note" placeholder="Note" value="${esc(e.note || '')}">
+    <p class="muted small">Bill type is used only when the category is Bills.</p>
+    <div class="row"><button class="btn" value="save">Save</button><button class="link warn" value="delete">Delete</button><button class="link" value="">Cancel</button></div>`, d => d.addEventListener('close', () => {
+    if (d.returnValue === 'delete') { deleteExpense(id); render(); return; }
+    if (d.returnValue !== 'save') return;
+    const amt = parseFloat(d.querySelector('#ee_amt').value); if (!(amt > 0)) return;
+    updateExpense(id, amt, d.querySelector('#ee_cat').value, d.querySelector('#ee_m').value, d.querySelector('#ee_note').value, d.querySelector('#ee_sub').value);
+    render();
+  }));
+}
+
+function tick() {
+  const el = document.getElementById('lock');
+  if (el && UI.tab === 'today') {
+    const ua = unlockAt(events('SMOKE'), startDate(), Date.now());
+    if (!ua) render(); else el.textContent = fmtRemaining(ua - Date.now());
+  }
+}
+
+// ---------------- dialogs ----------------
+function dialog(html, onMount) {
+  const d = document.createElement('dialog');
+  d.innerHTML = `<form method="dialog" class="dlg">${html}</form>`;
+  document.body.appendChild(d);
+  d.addEventListener('close', () => d.remove());
+  d.showModal();
+  onMount && onMount(d);
+  return d;
+}
+const localDT = ms => { const d = new Date(ms); return `${ymd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+function postponeDialog(key) {
+  const o = findOcc(key); if (!o) return;
+  const now = Date.now(), plus = now + 3600000, tonight = atMinute(ymd(new Date()), 21 * 60), tomorrow = atMinute(ymd(addDays(new Date(), 1)), minuteOf(o.start));
+  dialog(`<h3>Postpone "${esc(o.title)}"</h3>
+    <button class="btn wide" value="${plus}">+1 hour (${fmtTime(plus)})</button>
+    ${tonight > now ? `<button class="btn wide" value="${tonight}">Tonight 9:00 PM</button>` : ''}
+    <button class="btn wide" value="${tomorrow}">Tomorrow, ${fmtTime(tomorrow)}</button>
+    <div class="row"><input type="datetime-local" id="pdt" value="${localDT(o.start)}"><button class="btn outline" value="custom">Set</button></div>
+    <button class="link" value="">Cancel</button>`, d => d.addEventListener('close', () => {
+    let v = d.returnValue; if (!v) return;
+    if (v === 'custom') { const s = d.querySelector('#pdt').value; if (!s) return; v = new Date(s).getTime(); }
+    postponeTask(key, Number(v)); render();
+  }));
+}
+function editDialog(key) {
+  const o = findOcc(key); if (!o) return;
+  const r = o.recId ? recurring().find(x => x.id === o.recId) : null;
+  const sm = minuteOf(o.start), em = o.dur ? (sm + o.dur) % 1440 : null;
+  let days = r ? [...r.days] : [];
+  dialog(`<h3>Edit task</h3>
+    ${r ? '<p class="muted small">Changes apply to every repeat.</p>' : ''}${o.isPrayer ? '<p class="muted small">Prayer time is calculated automatically for Cairo.</p>' : ''}
+    <input id="e_title" value="${esc(o.title)}">
+    ${o.isPrayer ? '' : `<div class="row"><select id="e_cat">${catOptions(o.cat)}</select>
+      ${r ? '' : `<input type="date" id="e_date" value="${dayOf(o.start)}">`}
+      <label>from <input type="time" id="e_start" value="${toHHMM(sm)}"></label><label>to <input type="time" id="e_end" value="${em != null ? toHHMM(em) : ''}"></label></div>
+      ${r ? `<div class="row"><span class="muted">Repeat</span><div id="e_days">${daysPicker(days, 'eday')}</div></div>` : ''}`}
+    <div class="row"><button class="btn" value="save">Save</button><button class="link warn" value="delete">${r ? 'Delete all repeats' : 'Delete'}</button><button class="link" value="">Cancel</button></div>`,
+    d => {
+      d.addEventListener('click', ev => { const b = ev.target.closest('[data-act="eday"]'); if (!b) return; ev.preventDefault(); const n = +b.dataset.arg; days = days.includes(n) ? days.filter(x => x !== n) : [...days, n]; b.classList.toggle('on'); });
+      d.addEventListener('close', () => {
+        const v = d.returnValue;
+        if (v === 'delete') { deleteOcc(o); render(); return; }
+        if (v !== 'save') return;
+        const title = d.querySelector('#e_title').value.trim(); if (!title) return;
+        if (o.isPrayer) { updateRec(o.recId, title, o.cat, r ? r.min : 0, o.dur, r ? r.days : []); render(); return; }
+        const cat = d.querySelector('#e_cat').value, st = fromHHMM(d.querySelector('#e_start').value) ?? sm, en = fromHHMM(d.querySelector('#e_end').value);
+        const dur = en != null && en > st ? en - st : 0;
+        if (r) updateRec(o.recId, title, cat, st, dur, days);
+        else updateOne(o.oneId, title, cat, atMinute(d.querySelector('#e_date').value || dayOf(o.start), st), dur);
+        render();
+      });
+    });
+}
+
+// ---------------- actions ----------------
+const ACTIONS = {
+  tab: a => { UI.tab = a; localStorage.setItem('qt_tab', a); render(); },
+  smoke: () => { const t = Date.now(); saveEvents('SMOKE', [...events('SMOKE'), t]); UI.undo = { kind: 'SMOKE', value: t, until: t + 10000 }; render(); setTimeout(render, 10100); },
+  coffee: () => { const t = Date.now(); saveEvents('COFFEE', [...events('COFFEE'), t]); UI.undo = { kind: 'COFFEE', value: t, until: t + 10000 }; render(); setTimeout(render, 10100); },
+  undo: () => {
+    const u = UI.undo; if (!u) return;
+    if (u.kind === 'SMOKE' || u.kind === 'COFFEE') saveEvents(u.kind, events(u.kind).filter(x => x !== u.value));
+    if (u.kind === 'TASK') setTaskDone(u.value, false);
+    UI.undo = null; render();
+  },
+  exercise: () => { const s = exerciseDays(), d = ymd(new Date()); s.has(d) ? s.delete(d) : s.add(d); saveExerciseDays(s); render(); },
+  alert: a => { const [i, done] = a.split(':'); const al = budgetAlerts()[+i]; if (al) resolveAlert(al, done === '1'); render(); },
+  done: k => { setTaskDone(k, true); UI.undo = { kind: 'TASK', value: k, until: Date.now() + 10000 }; render(); setTimeout(render, 10100); },
+  undone: k => { setTaskDone(k, false); render(); },
+  postpone: k => postponeDialog(k),
+  edit: k => editDialog(k),
+  addat: h => { UI.tab = 'tasks'; const f = UI.form; f.title = ''; f.date = UI.taskDay; f.start = toHHMM(+h >= 0 ? +h * 60 : nextHalfHour()); f.end = ''; f.days = []; quickAddDialog(); },
+  formday: n => { n = +n; const f = UI.form; f.days = f.days.includes(n) ? f.days.filter(x => x !== n) : [...f.days, n]; render(); },
+  addtask: () => {
+    const f = UI.form; if (!f.title.trim()) return alert('Write the task first.');
+    const st = fromHHMM(f.start) ?? nextHalfHour(), en = fromHHMM(f.end), dur = en != null && en > st ? en - st : 0;
+    if (f.days.length) addRecurring(f.title, f.cat, st, dur, f.days); else addOne(f.title, f.cat, atMinute(f.date || ymd(new Date()), st), dur);
+    UI.form = { title: '', cat: f.cat, date: ymd(new Date()), start: '', end: '', days: [] }; render();
+  },
+  taskday: n => { UI.taskDay = +n === 0 ? ymd(new Date()) : ymd(addDays(parseYmd(UI.taskDay), +n)); render(); },
+  prayerday: n => { UI.prayerDay = +n === 0 ? ymd(new Date()) : ymd(addDays(parseYmd(UI.prayerDay), +n)); render(); },
+  month: n => { UI.month = addMonths(UI.month, +n); render(); },
+  addexp: prefix => {
+    const f = UI[prefix || 'exp'], v = parseFloat(f.amount); if (!(v > 0)) return alert('Enter an amount.');
+    const m = prefix === 'qexp' ? ymOf(new Date()) : UI.month, time = m === ymOf(new Date()) ? Date.now() : parseYm(m).getTime() + 12 * 3600000;
+    addExpense(v, f.cat, f.method, time, f.note, f.cat === 'BILLS' ? f.sub : null); f.amount = ''; f.note = ''; render();
+  },
+  editexp: id => editExpenseDialog(id),
+  togglealerts: () => { UI.alertsOpen = !UI.alertsOpen; render(); },
+  openday: d => { UI.taskDay = d; UI.tab = 'tasks'; localStorage.setItem('qt_tab', 'tasks'); render(); },
+  wird: a => {
+    const d = UI.prayerDay, key = `r:${WIRD_ID}:${d}`;
+    if (a === 'undo') { setWirdVerses(d, null); setTaskDone(key, false); render(); return; }
+    const n = parseInt((document.getElementById('wirdn') || {}).value || '0', 10);
+    if (!(n > 0)) { const e = document.getElementById('wirderr'); if (e) e.textContent = 'Enter the number of verses first.'; return; }
+    setWirdVerses(d, n); setTaskDone(key, true); render();
+  },
+  saveweight: () => { const v = parseFloat((document.getElementById('wkg') || {}).value); if (!(v >= 30 && v <= 250)) return alert('Enter your weight in kg.'); saveWeight(ymd(new Date()), v); UI.weight = ''; render(); },
+  delexp: id => { if (confirm('Delete this expense?')) { deleteExpense(id); render(); } },
+  inc: a => { const [id, st] = a.split(':'); setIncome(UI.month, id, st || null); render(); },
+  rent: a => { const m = UI.month; if (a === 'pay') payRent(m); else if (a === 'skip') skipRent(m); else undoRent(m); render(); },
+};
+function quickAddDialog() {
+  const f = UI.form;
+  dialog(`<h3>New task</h3>${taskForm().replace('data-act="addtask"', 'value="add"')}<button class="link" value="">Cancel</button>`, d => {
+    d.addEventListener('input', bindInput); d.addEventListener('change', bindInput);
+    d.addEventListener('click', ev => { const b = ev.target.closest('[data-act="formday"]'); if (!b) return; ev.preventDefault(); const n = +b.dataset.arg; f.days = f.days.includes(n) ? f.days.filter(x => x !== n) : [...f.days, n]; b.classList.toggle('on'); });
+    d.addEventListener('close', () => { if (d.returnValue === 'add') ACTIONS.addtask(); else render(); });
+    setTimeout(() => d.querySelector('#f_title')?.focus(), 50);
+  });
+}
+function bindInput(ev) {
+  const el = ev.target, b = el.dataset && el.dataset.bind; if (!b) return;
+  const [obj, field] = b.split('.');
+  if (obj === 'weight') { UI.weight = el.value; return; }
+  UI[obj][field] = el.value;
+  if (el.dataset.rerender && ev.type === 'change' && !el.closest('dialog')) render();
+}
+document.addEventListener('click', ev => {
+  const el = ev.target.closest('[data-act]'); if (!el || el.closest('dialog')) return;
+  const fn = ACTIONS[el.dataset.act]; if (fn) { ev.preventDefault(); fn(el.dataset.arg); }
+});
+document.addEventListener('input', ev => { if (!ev.target.closest('dialog')) bindInput(ev); });
+document.addEventListener('change', ev => { if (!ev.target.closest('dialog')) bindInput(ev); });
+setInterval(() => { tick(); }, 1000);
+setInterval(() => { const a = document.activeElement; if (!a || !['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName)) if (!document.querySelector('dialog')) render(); }, 60000);
+
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, doc, onSnapshot, setDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAgVODfsYwTDfD717HH7Xkd5nfhK2Vi2y0",
+  authDomain: "quit-sm-cfec3.firebaseapp.com",
+  projectId: "quit-sm-cfec3",
+  storageBucket: "quit-sm-cfec3.firebasestorage.app",
+  messagingSenderId: "516854820795",
+  appId: "1:516854820795:web:ba7d50d531a665e492de9e"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+let db;
+try { db = initializeFirestore(app, { localCache: persistentLocalCache() }); } catch (e) { db = initializeFirestore(app, {}); }
+
+const FILES = ["quit_timer", "quit_timer_tasks", "quit_timer_budget"];
+let unsubs = [], uid = null, loaded = new Set();
+const setStatus = t => { document.getElementById("status").textContent = t; };
+
+// every change goes to the same document/field the phone uses
+WRITE = (file, key, value) => {
+  if (value === null || value === undefined) delete DATA[file][key]; else DATA[file][key] = value;
+  if (!uid) return;
+  setDoc(doc(db, "users", uid, "prefs", file), { [key]: value == null ? deleteField() : value }, { merge: true })
+    .catch(e => setStatus("Sync error: " + e.message));
+};
+
+document.getElementById("signin").onclick = () =>
+  signInWithPopup(auth, new GoogleAuthProvider()).catch(e => { document.getElementById("loginerr").textContent = e.message; });
+document.getElementById("signout").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, user => {
+  unsubs.forEach(u => u()); unsubs = []; loaded = new Set();
+  uid = user ? user.uid : null;
+  window.SIGNED_IN = !!user;
+  document.getElementById("login").hidden = !!user;
+  document.getElementById("app").hidden = !user;
+  if (!user) return;
+  document.getElementById("who").textContent = user.email || "";
+  window.USER_NAME = (user.displayName || "").trim().split(" ")[0] || "";
+  for (const f of FILES) {
+    unsubs.push(onSnapshot(doc(db, "users", uid, "prefs", f), { includeMetadataChanges: true }, snap => {
+      if (snap.metadata.hasPendingWrites) return;
+      DATA[f] = snap.data() || {};
+      if (!snap.metadata.fromCache) loaded.add(f);
+      if (loaded.size === FILES.length && !window.SEEDED) {
+        window.SEEDED = true;
+        if (!DATA.quit_timer.start_date) WRITE("quit_timer", "start_date", ymd(new Date()));
+        seedTasksIfNeeded(); seedBudgetIfNeeded();
+        setTimeout(checkInDialog, 800);
+      }
+      setStatus(snap.metadata.fromCache ? "Offline · will sync later" : "Synced ✓");
+      const a = document.activeElement;
+      if (!document.querySelector("dialog") && !(a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName))) render();
+    }, e => setStatus("Sync error: " + e.message)));
+  }
+  render();
+});
+</script>
+</body>
+</html>
