@@ -79,6 +79,19 @@ dialog{background:var(--card);color:var(--text);border:0;border-radius:18px;padd
 .slot.free{height:auto;padding:6px 12px;font-size:12px;text-align:center}
 .stack{display:flex;height:10px;border-radius:5px;overflow:hidden}.stack i{display:block;height:100%}
 .tip{background:#1A2A3A;border-color:#2C4A6B;color:#9CC1FF}.clickable{cursor:pointer;border-radius:8px}.clickable:hover{background:#ffffff08}
+.task{position:relative}.task[draggable]{cursor:grab}.grip{position:absolute;left:30%;right:30%;bottom:0;height:7px;cursor:ns-resize;border-bottom:3px solid #ffffff30;border-radius:0 0 6px 6px}.grip:hover{border-color:var(--accent)}
+.resizetag{position:absolute;right:8px;bottom:-22px;background:var(--accent);color:#06231A;font-size:12px;padding:2px 8px;border-radius:8px;z-index:5}
+.dragging{opacity:.4}.dropover{outline:2px dashed var(--accent);outline-offset:2px;border-radius:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg button{background:none;border:0;color:var(--muted);padding:7px 14px;cursor:pointer;font:inherit}.seg button.on{background:var(--line);color:var(--text)}
+.weekgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}.wcol{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px;min-height:300px;display:flex;flex-direction:column;gap:6px}.wcol.today{border-color:var(--accent)}
+.wh{cursor:pointer;padding:2px 4px 6px;border-bottom:1px solid var(--line)}.wtask{background:#ffffff08;border-left:4px solid;border-radius:8px;padding:4px 6px;cursor:grab;font-size:13px}.wtask small{display:block;color:var(--muted);font-size:11px}.wtask.late{background:#3A1F24}.wtask.done b{text-decoration:line-through;color:var(--muted)}
+.slot.paste{border-color:var(--amber);color:var(--amber);font-size:13px;margin-left:6px}.clip{border-color:var(--amber)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(80px);background:var(--accent);color:#06231A;padding:10px 18px;border-radius:12px;font-weight:600;transition:transform .25s;z-index:99}.toast.show{transform:translateX(-50%) translateY(0)}
+.qbtn.crave{width:100%;margin:8px 0 0;border-color:var(--amber);color:var(--amber)}
+.cols.hrs{height:70px;gap:2px}.cols.hrs small{font-size:9px}
+textarea{width:100%;box-sizing:border-box;background:#0E1318;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;resize:vertical}
+.scrollx{overflow-x:auto}table.plan input,table.plan select{padding:4px 6px;font-size:13px;max-width:130px}table.plan tr.off{opacity:.45}table.plan .day{width:24px;height:24px;font-size:11px}
+.goal .huge small{font-size:13px;font-weight:400}
 </style>
 </head>
 <body>
@@ -431,6 +444,227 @@ function recommendations() {
 
 if (typeof module !== 'undefined') module.exports = { DATA, setWriter: w => { WRITE = w; }, Prayer, events, saveEvents, unlockAt, gapMinutes, dayNumber, occurrencesOn, seedTasksIfNeeded, seedBudgetIfNeeded, setTaskDone, postponeTask, addOne, addRecurring, budgetFor, spent, budgetAlerts, payRent, undoRent, addExpense, byCategory, recommendations, taskStats, ymd, savingsHistory, setIncome };
 
+// ===================== Stage 2 — goals, balance score, urges, patterns =====================
+const TARGETS = { STUDY: 600, READING: 180, GYM_DAYS: 4, SAVINGS: 10000 }; // minutes per week / days per week / EGP per month
+const BALANCE_W = { smoke: 40, move: 20, tasks: 25, money: 15 };
+
+// ---- urges (craving button) ----
+function urges() { return jsonOr(Q().urges, []); }
+function logUrge(t = Date.now()) { WRITE('quit_timer', 'urges', JSON.stringify([...urges(), { t, ok: null }])); return t; }
+function resolveUrge(t, ok) { WRITE('quit_timer', 'urges', JSON.stringify(urges().map(u => u.t === t ? { ...u, ok } : u))); }
+
+// ---- postpone counter (for "most postponed") ----
+function postponeCounts() { return jsonOr(TK().postpones, {}); }
+function countPostpone(title) { const p = postponeCounts(), k = title.trim().toLowerCase(); p[k] = (p[k] || 0) + 1; WRITE('quit_timer_tasks', 'postpones', JSON.stringify(p)); }
+
+// ---- helpers ----
+const daysBack = n => { const out = []; for (let i = n - 1; i >= 0; i--) out.push(ymd(addDays(new Date(), -i))); return out; };
+const weekStart = d => addDays(d, -((d.getDay() + 6) % 7)); // Monday
+function avgGapOn(cigs, day) { const l = cigs.filter(t => dayOf(t) === day); if (l.length < 2) return null; let s = 0; for (let i = 1; i < l.length; i++) s += l[i] - l[i - 1]; return s / (l.length - 1) / 60000; }
+function workMinutesOn(day) { return occurrencesOn(day).filter(o => o.cat === 'WORK' && o.dur > 0).reduce((s, o) => s + o.dur, 0); }
+function completionOn(day) { const t = occurrencesOn(day).filter(o => !o.isPrayer); return t.length ? t.filter(o => o.done).length / t.length : null; }
+function allPrayersOn(day) { const s = occurrencesOn(day).filter(o => o.isSalah); return s.length === 5 && s.every(o => o.done); }
+function exDay(day) { return isExerciseDay(day, exerciseDays(), heartDays()); }
+const r1 = v => v == null ? null : Math.round(v * 10) / 10;
+function compare(days, pred, fn) { // avg of fn over days where pred is true vs false
+  const a = [], b = [];
+  for (const d of days) { const v = fn(d); if (v == null) continue; (pred(d) ? a : b).push(v); }
+  return { yes: avg(a), no: avg(b), nYes: a.length, nNo: b.length };
+}
+
+// ---- daily balance score ----
+function balanceScore(day = ymd(new Date())) {
+  const cigs = events('SMOKE'), start = startDate(), prev = ymd(addDays(parseYmd(day), -1));
+  const parts = [];
+  // smoking: aim for at least one fewer than yesterday
+  let sm, sh;
+  if (isQuit(start, day)) { sm = BALANCE_W.smoke; sh = 'Smoke-free'; }
+  else {
+    const t = countOn(cigs, day), y = countOn(cigs, prev), target = Math.max(0, y - 1);
+    if (!cigs.some(c => dayOf(c) < day)) { sm = BALANCE_W.smoke; sh = `${t} today`; }
+    else { sm = t <= target ? BALANCE_W.smoke : Math.max(0, BALANCE_W.smoke - 10 * (t - target)); sh = `${t} today · aim ≤ ${target}`; }
+  }
+  parts.push({ k: 'smoke', name: 'Smoking', got: sm, max: BALANCE_W.smoke, hint: sh });
+  const moved = exDay(day);
+  parts.push({ k: 'move', name: 'Movement', got: moved ? BALANCE_W.move : 0, max: BALANCE_W.move, hint: moved ? 'Exercised ✓' : 'Not yet' });
+  const occs = occurrencesOn(day), sal = occs.filter(o => o.isSalah), tk = occs.filter(o => !o.isPrayer);
+  const pf = sal.length ? sal.filter(o => o.done).length / sal.length : 1, tf = tk.length ? tk.filter(o => o.done).length / tk.length : 1;
+  parts.push({ k: 'tasks', name: 'Tasks & prayers', got: Math.round(BALANCE_W.tasks * (pf + tf) / 2), max: BALANCE_W.tasks, hint: `${sal.filter(o => o.done).length}/5 prayers · ${tk.filter(o => o.done).length}/${tk.length} tasks` });
+  const m = day.slice(0, 7), before = expensesIn(m).filter(e => dayOf(e.time) < day).reduce((s, e) => s + e.amount, 0) + cigs.filter(t => dayOf(t).startsWith(m) && dayOf(t) < day).length * CFG.PER_CIG;
+  const left = monthLen(m) - parseYmd(day).getDate() + 1, safe = Math.max(0, (budgetFor(m) - before) / left);
+  const todaySpent = expensesIn(m).filter(e => dayOf(e.time) === day).reduce((s, e) => s + e.amount, 0) + countOn(cigs, day) * CFG.PER_CIG;
+  const mg = todaySpent <= safe ? BALANCE_W.money : safe > 0 ? Math.round(BALANCE_W.money * safe / todaySpent) : 0;
+  parts.push({ k: 'money', name: 'Budget', got: mg, max: BALANCE_W.money, hint: `${money(todaySpent)} of ${money(safe)} safe` });
+  const total = parts.reduce((s, p) => s + p.got, 0);
+  const weakest = parts.filter(p => p.got < p.max).sort((a, b) => (a.got / a.max) - (b.got / b.max))[0] || null;
+  return { total, parts, weakest };
+}
+
+// ---- goal 1: smoking ----
+function smokingGoal() {
+  const cigs = events('SMOKE'), coffees = events('COFFEE'), start = startDate(), today = ymd(new Date());
+  const past = d => d >= start && d < today;
+  const d30 = daysBack(31).slice(0, -1).filter(past), d7 = d30.slice(-7), p7 = d30.slice(-14, -7);
+  const per = l => avg(l.map(d => countOn(cigs, d)));
+  const a7 = per(d7), a30 = per(d30), prev7 = per(p7);
+  // projection: slope of the last 14 days
+  const pts = d30.slice(-14).map((d, i) => [i, countOn(cigs, d)]);
+  let zeroDate = null, slope = null;
+  if (pts.length >= 5) {
+    const mx = avg(pts.map(p => p[0])), my = avg(pts.map(p => p[1]));
+    const num = pts.reduce((s, [x, y]) => s + (x - mx) * (y - my), 0), den = pts.reduce((s, [x]) => s + (x - mx) ** 2, 0);
+    slope = den ? num / den : 0;
+    if (slope < -0.01 && a7 > 0) zeroDate = ymd(addDays(new Date(), Math.ceil(a7 / -slope)));
+  }
+  const quitDate = dateOfDay(start, QUIT_DAY);
+  // hardest hours (last 30 days)
+  const hours = Array(24).fill(0); cigs.filter(t => Date.now() - t < 30 * DAY).forEach(t => hours[new Date(t).getHours()]++);
+  // triggers (last 30 days)
+  const recent = cigs.filter(t => Date.now() - t < 30 * DAY);
+  let afterCoffee = 0, duringWork = 0;
+  const workCache = {};
+  for (const t of recent) {
+    if (coffees.some(c => t >= c && t - c <= 15 * 60000)) afterCoffee++;
+    const d = dayOf(t); workCache[d] = workCache[d] || occurrencesOn(d).filter(o => o.cat === 'WORK' && o.dur > 0);
+    if (workCache[d].some(o => t >= o.start && t <= o.start + o.dur * 60000)) duringWork++;
+  }
+  const n = recent.length;
+  const triggers = n ? { coffee: afterCoffee / n, work: duringWork / n, free: Math.max(0, n - duringWork) / n } : null;
+  // money saved vs first week
+  const firstWeek = daysBack(400).filter(d => d >= start).slice(0, 7).filter(d => d < today);
+  const base = firstWeek.length >= 3 ? per(firstWeek) : null;
+  const allDays = daysBack(400).filter(past);
+  const saved = base != null ? allDays.reduce((s, d) => s + (base - countOn(cigs, d)) * CFG.PER_CIG, 0) : null;
+  // bounce-back: after a bad day (> previous 7-day avg + 1), days until back at or below that avg
+  const backs = [];
+  for (let i = 7; i < allDays.length; i++) {
+    const ref = per(allDays.slice(i - 7, i)), c = countOn(cigs, allDays[i]);
+    if (c > ref + 1) { let k = i + 1; while (k < allDays.length && countOn(cigs, allDays[k]) > ref) k++; if (k < allDays.length) backs.push(k - i); }
+  }
+  // coffee → cigarette
+  const rc = coffees.filter(c => Date.now() - c < 30 * DAY), follow = [];
+  rc.forEach(c => { const s = cigs.find(t => t >= c && t - c <= 60 * 60000); if (s) follow.push((s - c) / 60000); });
+  const u = urges().filter(x => Date.now() - x.t < 7 * DAY);
+  const uh = Array(24).fill(0); urges().filter(x => Date.now() - x.t < 30 * DAY).forEach(x => uh[new Date(x.t).getHours()]++);
+  return { a7, a30, prev7, slope, zeroDate, quitDate, onTrack: zeroDate ? zeroDate <= quitDate : null, hours, triggers, n, saved, base, bounce: avg(backs),
+    coffeeFollow: rc.length ? { pct: follow.filter(m => m <= 15).length / rc.length, median: follow.length ? follow.sort((a, b) => a - b)[Math.floor(follow.length / 2)] : null, n: rc.length } : null,
+    urgesWeek: u.length, urgesPassed: u.filter(x => x.ok === true).length, urgeHours: uh };
+}
+
+// ---- goal 2: heart ----
+function heartGoal() {
+  const heart = heartDays(), weeks = [];
+  const mon = weekStart(new Date());
+  for (let w = 7; w >= 0; w--) {
+    const s = addDays(mon, -7 * w), vals = [0, 1, 2, 3, 4, 5, 6].map(i => (heart[ymd(addDays(s, i))] || {}).rest).filter(v => v != null);
+    weeks.push({ week: ymd(s), rest: avg(vals) });
+  }
+  const days = daysBack(60).slice(0, -1).filter(d => (heart[d] || {}).rest != null);
+  const ex = compare(days, exDay, d => heart[d].rest);
+  const eff = effectsAll(), sm = eff.filter(e => e.type === 'SMOKE' && e.delta != null), cf = eff.filter(e => e.type === 'COFFEE' && e.delta != null);
+  const half = l => { const a = l.filter(e => Date.now() - e.time < 14 * DAY), b = l.filter(e => Date.now() - e.time >= 14 * DAY); return { now: avg(a.map(e => e.delta)), before: avg(b.map(e => e.delta)) }; };
+  return { weeks, ex, smoke: half(sm), coffee: half(cf) };
+}
+
+// ---- goal 3: time ----
+function weekMinutes(cat, monday) {
+  let m = 0; const now = Date.now();
+  for (let i = 0; i < 7; i++) occurrencesOn(ymd(addDays(monday, i))).forEach(o => { if (o.cat === cat && o.done && o.dur > 0 && o.start <= now) m += o.dur; });
+  return m;
+}
+function timeGoal() {
+  const mon = weekStart(new Date()), now = Date.now();
+  const study = weekMinutes('STUDY', mon), reading = weekMinutes('READING', mon);
+  let planned = 0, done = 0;
+  for (let i = 0; i < 7; i++) occurrencesOn(ymd(addDays(mon, i))).forEach(o => { if (o.isPrayer || !o.dur) return; planned += o.dur; if (o.done) done += o.dur; });
+  const weeks = [];
+  for (let w = 3; w >= 0; w--) {
+    const s = addDays(mon, -7 * w); let t = 0, d = 0;
+    for (let i = 0; i < 7; i++) occurrencesOn(ymd(addDays(s, i))).forEach(o => { if (o.isPrayer || o.start > now) return; t++; if (o.done) d++; });
+    weeks.push({ week: ymd(s), rate: t ? d / t : null });
+  }
+  const pp = Object.entries(postponeCounts()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const daysLeft = 7 - ((new Date().getDay() + 6) % 7);
+  return { study, reading, planned, done, weeks, postponed: pp, daysLeft };
+}
+
+// ---- goal 4: gym ----
+function gymGoal() {
+  const mon = weekStart(new Date()), count = s => [0, 1, 2, 3, 4, 5, 6].filter(i => { const d = ymd(addDays(s, i)); return d <= ymd(new Date()) && exDay(d); }).length;
+  const thisWeek = count(mon);
+  let streak = 0; for (let w = 1; w < 52; w++) { if (count(addDays(mon, -7 * w)) >= TARGETS.GYM_DAYS) streak++; else break; }
+  return { thisWeek, streak };
+}
+
+// ---- goal 5: prayers & wird ----
+function prayerGoal() {
+  const today = ymd(new Date()), start = startDate();
+  let streak = 0; const d0 = allPrayersOn(today) ? 0 : 1;
+  for (let i = d0; i < 365; i++) { const d = ymd(addDays(new Date(), -i)); if (d < start) break; if (allPrayersOn(d)) streak++; else break; }
+  const missed = [0, 0, 0, 0, 0]; const now = Date.now();
+  daysBack(30).filter(d => d >= start).forEach(d => occurrencesOn(d).filter(o => o.isSalah && o.start < now && !o.done).forEach(o => missed[+o.recId.slice(6)]++));
+  const mi = missed.indexOf(Math.max(...missed));
+  const m = ymOf(new Date()), tot = wirdMonthTotal(m), tgt = wirdTarget(m), el = new Date().getDate();
+  return { streak, missed, mostMissed: missed[mi] > 0 ? Prayer.NAMES[mi] : null, wird: tot, target: tgt, projected: Math.round(tot / el * monthLen(m)) };
+}
+
+// ---- goal 6: money ----
+function moneyGoal() {
+  const cigs = events('SMOKE'), m = ymOf(new Date()), el = new Date().getDate(), len = monthLen(m);
+  const sp = spent(m, cigs), bud = budgetFor(m), projSpend = sp / el * len, projSave = bud - projSpend;
+  const now = byCategory(m, cigs), prev = byCategory(addMonths(m, -1), cigs);
+  let growing = null;
+  for (const c of Object.keys(now)) { const pace = now[c] / el * len, p = prev[c]; if (p > 0 && pace > p * 1.15 && (!growing || pace - p > growing.diff)) growing = { cat: c, pace, prev: p, diff: pace - p }; }
+  return { sp, bud, projSpend, projSave, target: TARGETS.SAVINGS, growing, history: savingsHistory(cigs) };
+}
+
+// ---- cross-goal links ----
+function crossLinks() {
+  const cigs = events('SMOKE'), start = startDate(), today = ymd(new Date());
+  const days = daysBack(60).filter(d => d >= start && d < today);
+  const c = d => countOn(cigs, d);
+  const workDays = days.filter(d => workMinutesOn(d) > 0);
+  return {
+    exercise: { cigs: compare(days, exDay, c), gap: compare(days, exDay, d => avgGapOn(cigs, d)), done: compare(days, exDay, completionOn) },
+    prayers: compare(days, allPrayersOn, c),
+    tasks: compare(days.filter(d => completionOn(d) != null), d => completionOn(d) >= 0.7, c),
+    work: { cigs: compare(workDays, d => workMinutesOn(d) >= 240, c), gap: compare(workDays, d => workMinutesOn(d) >= 240, d => avgGapOn(cigs, d)) },
+  };
+}
+
+// ---- gentle trends ----
+function trends() {
+  const cigs = events('SMOKE'), start = startDate(), today = ymd(new Date());
+  const past = daysBack(61).slice(0, -1).filter(d => d >= start);
+  const a = l => avg(l.map(d => countOn(cigs, d)));
+  return { w7: a(past.slice(-7)), w7prev: a(past.slice(-14, -7)), d30: a(past.slice(-30)), d30prev: a(past.slice(-60, -30)), today: countOn(cigs, today) };
+}
+
+// ---- personal tip using the user's own numbers ----
+function personalTip() {
+  const x = crossLinks(), s = smokingGoal(), today = ymd(new Date());
+  if (x.exercise.gap.yes != null && x.exercise.gap.no != null && x.exercise.gap.yes - x.exercise.gap.no >= 10 && !exDay(today))
+    return `On exercise days your gap between cigarettes is about ${Math.round(x.exercise.gap.yes - x.exercise.gap.no)} min longer. A light workout today could help.`;
+  if (x.exercise.cigs.yes != null && x.exercise.cigs.no != null && x.exercise.cigs.no - x.exercise.cigs.yes >= 1 && !exDay(today))
+    return `You smoke about ${r1(x.exercise.cigs.no - x.exercise.cigs.yes)} fewer cigarettes on exercise days. Even a 20-minute walk counts.`;
+  if (s.coffeeFollow && s.coffeeFollow.pct >= 0.5) return `${Math.round(s.coffeeFollow.pct * 100)}% of your coffees are followed by a cigarette within 15 min. Have the next one with a glass of water and a short walk instead.`;
+  const top = s.hours.indexOf(Math.max(...s.hours));
+  if (s.n >= 10) return `Your hardest hour is around ${fmtMin(top * 60)}. Plan something for that time today: a task, a walk, or water and gum.`;
+  return null;
+}
+
+// ---- short pattern summary (goes into the Plan with Claude prompt) ----
+function patternSummary() {
+  const s = smokingGoal(), x = crossLinks(), lines = [];
+  if (s.n >= 5) { const top = s.hours.map((v, h) => [h, v]).sort((a, b) => b[1] - a[1]).slice(0, 3).filter(p => p[1] > 0).map(p => fmtMin(p[0] * 60)); lines.push(`Hardest smoking hours: ${top.join(', ')}.`); }
+  if (x.work.cigs.yes != null && x.work.cigs.no != null) lines.push(`Heavy-work days (4h+ of Work): ${r1(x.work.cigs.yes)} cigarettes vs ${r1(x.work.cigs.no)} on lighter days.`);
+  if (x.exercise.cigs.yes != null && x.exercise.cigs.no != null) lines.push(`Exercise days: ${r1(x.exercise.cigs.yes)} cigarettes vs ${r1(x.exercise.cigs.no)} on other days.`);
+  if (s.coffeeFollow) lines.push(`${Math.round(s.coffeeFollow.pct * 100)}% of coffees are followed by a cigarette within 15 min.`);
+  if (s.urgesWeek) lines.push(`Urges logged this week: ${s.urgesWeek} (${s.urgesPassed} passed without smoking). Most urges around ${fmtMin(s.urgeHours.indexOf(Math.max(...s.urgeHours)) * 60)}.`);
+  if (s.a7 != null) lines.push(`Average cigarettes per day, last 7 days: ${r1(s.a7)}. Today's required gap: ${gapMinutes(startDate(), ymd(new Date()))} min.`);
+  return lines;
+}
+
 </script>
 <script>
 // ===================== Quit Timer — laptop UI =====================
@@ -606,7 +840,7 @@ function vTasks() {
       const past = items.filter(o => o.start <= now), fut = items.filter(o => o.start > now);
       inner = past.map(o => taskRow(o, now)).join('') + nowLine(now) + fut.map(o => taskRow(o, now)).join('') + (items.length ? '' : `<button class="slot" data-act="addat" data-arg="${h}">+</button>`);
     } else inner = items.length ? items.map(o => taskRow(o, now)).join('') : `<button class="slot" data-act="addat" data-arg="${h}">+</button>`;
-    rows += `<div class="hour ${h === curH ? 'now' : ''}"><span>${fmtMin(h * 60).replace(':00', '')}</span><div>${inner}</div></div>`;
+    rows += `<div class="hour ${h === curH ? 'now' : ''}" data-drop="${h}"><span>${fmtMin(h * 60).replace(':00', '')}</span><div>${inner}</div></div>`;
   }
   return `<div class="head row"><h1>Tasks</h1><button class="btn" data-act="addat" data-arg="-1">+ Add</button></div>
     ${dayNav(d, 'taskday')}
@@ -824,12 +1058,13 @@ function editDialog(key) {
       ${r ? '' : `<input type="date" id="e_date" value="${dayOf(o.start)}">`}
       <label>from <input type="time" id="e_start" value="${toHHMM(sm)}"></label><label>to <input type="time" id="e_end" value="${em != null ? toHHMM(em) : ''}"></label></div>
       ${r ? `<div class="row"><span class="muted">Repeat</span><div id="e_days">${daysPicker(days, 'eday')}</div></div>` : ''}`}
-    <div class="row"><button class="btn" value="save">Save</button><button class="link warn" value="delete">${r ? 'Delete all repeats' : 'Delete'}</button><button class="link" value="">Cancel</button></div>`,
+    <div class="row"><button class="btn" value="save">Save</button><button class="link" value="copy">Copy</button><button class="link warn" value="delete">${r ? 'Delete all repeats' : 'Delete'}</button><button class="link" value="">Cancel</button></div>`,
     d => {
       d.addEventListener('click', ev => { const b = ev.target.closest('[data-act="eday"]'); if (!b) return; ev.preventDefault(); const n = +b.dataset.arg; days = days.includes(n) ? days.filter(x => x !== n) : [...days, n]; b.classList.toggle('on'); });
       d.addEventListener('close', () => {
         const v = d.returnValue;
         if (v === 'delete') { deleteOcc(o); render(); return; }
+        if (v === 'copy') { ACTIONS.copytask(key); return; }
         if (v !== 'save') return;
         const title = d.querySelector('#e_title').value.trim(); if (!title) return;
         if (o.isPrayer) { updateRec(o.recId, title, o.cat, r ? r.min : 0, o.dur, r ? r.days : []); render(); return; }
@@ -914,6 +1149,386 @@ document.addEventListener('input', ev => { if (!ev.target.closest('dialog')) bin
 document.addEventListener('change', ev => { if (!ev.target.closest('dialog')) bindInput(ev); });
 setInterval(() => { tick(); }, 1000);
 setInterval(() => { const a = document.activeElement; if (!a || !['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName)) if (!document.querySelector('dialog')) render(); }, 60000);
+
+// ===================== Stage 2 — laptop UI additions =====================
+TABS.splice(TABS.length, 0, ['assistant', 'Assistant']);
+Object.assign(UI, { taskView: localStorage.getItem('qt_tview') || 'day', clip: null, plan: null, planText: '', toastMsg: '', urge: null });
+
+// ---------- shared ----------
+function toast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg; t.className = 'toast show';
+  clearTimeout(toast._h); toast._h = setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+async function copyText(s) {
+  try { await navigator.clipboard.writeText(s); return true; }
+  catch (e) { const ta = document.createElement('textarea'); ta.value = s; document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (_) { } ta.remove(); return ok; }
+}
+// move / resize a task for ONE day (repeating tasks: only this day changes)
+function moveOcc(key, newStart, newDur) {
+  const o = findOcc(key); if (!o || o.isPrayer) return;
+  newStart = Math.floor(newStart / 60000) * 60000;
+  const dur = newDur == null ? o.dur : newDur;
+  if (o.oneId) saveOne(oneTasks().map(t => t.id === o.oneId ? { ...t, start: newStart, dur, overdue: false } : t));
+  else { const s = skipSet(); s.add(key); WRITE('quit_timer_tasks', 'occ_skip', [...s]); addOne(o.title, o.cat, newStart, dur); }
+}
+const scoreColor = v => v >= 75 ? 'var(--accent)' : v >= 50 ? 'var(--amber)' : 'var(--warn)';
+
+// ---------- balance score card ----------
+function balanceCard() {
+  const b = balanceScore();
+  return card('', `<div class="cool">${ringSvg(b.total / 100, scoreColor(b.total), 96, 9, '')}<div class="rc" style="width:96px;margin-left:-96px"><b style="font-size:22px">${b.total}</b><small>/ 100</small></div>
+    <div style="flex:1"><b>Balance score</b>${b.parts.map(p => `<div class="barrow"><span>${p.name}</span><div class="bar"><i style="width:${Math.max(2, p.got / p.max * 100)}%;background:${scoreColor(p.got / p.max * 100)}"></i></div><em>${p.got}/${p.max}</em></div>`).join('')}
+    ${b.weakest ? `<p class="muted small">Needs attention: <b>${b.weakest.name}</b> · ${esc(b.weakest.hint)}</p>` : '<p class="ok small">Everything on track today.</p>'}</div></div>`);
+}
+
+// ---------- craving ----------
+const URGE_TIPS = ['Drink a full glass of water, slowly.', 'Take a short walk, even inside the house.', 'Breathe: in for 4, hold 4, out for 6. Repeat.', 'Chew gum or eat a piece of fruit.', 'Wash your face with cold water.'];
+function cravingDialog() {
+  const t = logUrge(), tip = URGE_TIPS[Math.floor(Math.random() * URGE_TIPS.length)], end = Date.now() + 120000;
+  UI.urge = t;
+  dialog(`<h3>Ride it out · 2 minutes</h3><p>${tip}</p><b class="huge" id="urgeclock">2:00</b>
+    <p class="muted small">Cravings usually peak and fade within a few minutes. This urge is logged.</p>
+    <div class="row"><button class="btn" value="ok">Craving passed ✓</button><button class="link" value="">Close</button></div>`, d => {
+    const iv = setInterval(() => { const el = d.querySelector('#urgeclock'); const left = Math.max(0, end - Date.now()); if (el) el.textContent = `${Math.floor(left / 60000)}:${pad(Math.floor(left % 60000 / 1000))}`; if (!left) clearInterval(iv); }, 500);
+    d.addEventListener('close', () => { clearInterval(iv); if (d.returnValue === 'ok') { resolveUrge(t, true); toast('Nice. Urge resisted.'); } render(); });
+  });
+}
+
+// ---------- goal-based insights ----------
+const pct = v => v == null ? '—' : Math.round(v * 100) + '%';
+const vs = (c, unit, fmt = r1) => c.yes == null || c.no == null ? '<p class="muted small">Not enough data yet.</p>' :
+  (() => { const mx = Math.max(c.yes, c.no) || 1; return bar('Yes', c.yes, mx, 'var(--accent)', fmt(c.yes) + unit) + bar('No', c.no, mx, 'var(--amber)', fmt(c.no) + unit); })();
+function trendWord(now, before, lowerIsBetter = true) {
+  if (now == null || before == null) return '';
+  const d = now - before; if (Math.abs(d) < 0.15) return '<span class="muted">steady</span>';
+  return (d < 0) === lowerIsBetter ? `<span class="ok">improving ${d < 0 ? '↓' : '↑'}</span>` : `<span class="warn">slipping ${d < 0 ? '↓' : '↑'}</span>`;
+}
+function hourBars(hours, color) {
+  const mx = Math.max(1, ...hours);
+  return `<div class="cols hrs">${hours.map((v, h) => `<div title="${fmtMin(h * 60)}: ${v}"><i style="height:${v ? v / mx * 100 : 2}%;background:${color}"></i><small>${h % 3 === 0 ? (h % 12 || 12) + (h < 12 ? 'a' : 'p') : ''}</small></div>`).join('')}</div>`;
+}
+function goalCard(title, now, target, prog, body, action) {
+  return `<section class="card goal"><div class="line"><h3 style="margin:0">${title}</h3><small class="muted">${target}</small></div>
+    <div class="huge" style="margin:4px 0">${now}</div>${prog != null ? `<div class="bar big"><i style="width:${Math.max(1, Math.min(100, prog * 100))}%;background:${scoreColor(prog * 100)}"></i></div>` : ''}
+    ${body}${action ? `<p class="tip small" style="margin-top:8px">👉 ${action}</p>` : ''}</section>`;
+}
+function vInsights() {
+  const start = startDate(), today = ymd(new Date()), n = dayNumber(start, today);
+  const s = smokingGoal(), hg = heartGoal(), tg = timeGoal(), gg = gymGoal(), pg = prayerGoal(), mg = moneyGoal(), x = crossLinks(), tr = trends(), b = balanceScore();
+  const fmtD = d => d ? parseYmd(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  const tip = personalTip();
+  let h = `<div class="head row"><div><h1>Insights</h1><p class="muted">Organised by your goals · day ${n} of ${QUIT_DAY - 1}</p></div></div>`;
+  h += `<div class="grid2"><div>`;
+  h += balanceCard();
+  if (tip) h += `<section class="card tip">💡 ${esc(tip)}</section>`;
+  // 1 smoking
+  h += goalCard('🚭 Smoking → zero', s.a7 != null ? `${r1(s.a7)} <small class="muted">a day (7-day avg)</small>` : '—', `quit day ${fmtD(s.quitDate)}`, Math.min(1, n / (QUIT_DAY - 1)),
+    `<p class="small">7 days ${trendWord(tr.w7, tr.w7prev)} · 30 days: ${tr.d30 != null ? r1(tr.d30) : '—'} a day ${trendWord(tr.d30, tr.d30prev)}</p>
+    <p class="small">${s.zeroDate ? `At your current pace you reach zero around <b>${fmtD(s.zeroDate)}</b> — ${s.onTrack ? '<span class="ok">on track</span>' : '<span class="warn">behind the plan, the gap will carry you</span>'}.` : 'Projection appears after a couple of weeks of falling numbers.'}</p>
+    <p class="small">Phase ${phaseOf(n)} · +${increaseOnDay(n)} min/day · gap today ${gapMinutes(start, today)} min${nextPhaseDay(n) ? ` · next speed-up ${fmtD(dateOfDay(start, nextPhaseDay(n)))}` : ''}</p>
+    ${s.saved != null ? `<p class="small">Money saved vs your first week: <b class="${s.saved >= 0 ? 'ok' : 'warn'}">${money(s.saved)}</b></p>` : ''}
+    ${s.bounce != null ? `<p class="small">Bounce-back after a bad day: about <b>${r1(s.bounce)} days</b></p>` : ''}
+    <p class="muted small" style="margin-bottom:2px">Hardest hours (30 days)</p>${hourBars(s.hours, 'var(--warn)')}
+    ${s.triggers ? `<p class="muted small" style="margin:8px 0 2px">Triggers</p>${bar('After coffee (15 min)', s.triggers.coffee, 1, '#E8A24A', pct(s.triggers.coffee))}${bar('During work tasks', s.triggers.work, 1, '#6CA0FF', pct(s.triggers.work))}${bar('Free time', s.triggers.free, 1, '#4FD1A5', pct(s.triggers.free))}` : ''}
+    ${s.coffeeFollow ? `<p class="small">Coffee → cigarette: ${pct(s.coffeeFollow.pct)} within 15 min${s.coffeeFollow.median != null ? `, typically after ${Math.round(s.coffeeFollow.median)} min` : ''} (${s.coffeeFollow.n} coffees).</p>` : ''}
+    <p class="small">Urges logged this week: <b>${s.urgesWeek}</b> · passed without smoking: <b class="ok">${s.urgesPassed}</b></p>
+    ${urges().length ? `<p class="muted small" style="margin-bottom:2px">When urges hit (30 days)</p>${hourBars(s.urgeHours, 'var(--amber)')}` : ''}`,
+    s.hours.some(v => v) ? `Your hardest hour is ${fmtMin(s.hours.indexOf(Math.max(...s.hours)) * 60)} — plan something for it today.` : null);
+  // 2 heart
+  const hw = hg.weeks.filter(w => w.rest != null);
+  h += goalCard('❤️ Heart health', hw.length ? `${Math.round(hw[hw.length - 1].rest)} <small class="muted">bpm resting (this week)</small>` : '—', 'lower is better', null,
+    (hw.length >= 2 ? svgLine([{ name: 'resting HR by week', color: '#F472B6', values: hg.weeks.map(w => w.rest) }], []) : '<p class="muted small">Weekly trend appears once the phone syncs heart data.</p>') +
+    `<p class="small">Cigarette pulse jump: ${sgn(hg.smoke.now)} bpm last 2 weeks vs ${sgn(hg.smoke.before)} before · Coffee: ${sgn(hg.coffee.now)} vs ${sgn(hg.coffee.before)}</p>
+     <p class="muted small" style="margin-bottom:2px">Resting HR on gym days (Yes) vs other days (No)</p>${vs(hg.ex, ' bpm')}`, null);
+  // 7 weight
+  h += weightCard();
+  h += `</div><div>`;
+  // 3 time
+  h += goalCard('📚 Time', `${fmtDur(tg.study)} <small class="muted">study</small> · ${fmtDur(tg.reading)} <small class="muted">reading</small>`, `week: Study ${TARGETS.STUDY / 60}h · Reading ${TARGETS.READING / 60}h`,
+    (Math.min(1, tg.study / TARGETS.STUDY) + Math.min(1, tg.reading / TARGETS.READING)) / 2,
+    `${bar('Study', tg.study, TARGETS.STUDY, CATS.STUDY.color, `${fmtDur(tg.study)} / ${TARGETS.STUDY / 60}h`)}${bar('Reading', tg.reading, TARGETS.READING, CATS.READING.color, `${fmtDur(tg.reading)} / ${TARGETS.READING / 60}h`)}
+     <p class="small">This week planned ${fmtDur(tg.planned)} · done ${fmtDur(tg.done)}</p>
+     <p class="muted small" style="margin-bottom:2px">Completion rate by week</p>${tg.weeks.map(w => bar(parseYmd(w.week).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }), w.rate || 0, 1, '#6CA0FF', pct(w.rate))).join('')}
+     ${tg.postponed.length ? `<p class="small">Most postponed: ${tg.postponed.map(([t, c]) => `${esc(t)} (${c}×)`).join(', ')}</p>` : ''}`,
+    tg.study < TARGETS.STUDY ? `${fmtDur(Math.max(0, TARGETS.STUDY - tg.study))} of study left this week — about ${fmtDur(Math.ceil((TARGETS.STUDY - tg.study) / tg.daysLeft))} a day.` : 'Study target reached this week.');
+  // 4 gym
+  h += goalCard('🏋️ Gym', `${gg.thisWeek} / ${TARGETS.GYM_DAYS} <small class="muted">days this week</small>`, `${TARGETS.GYM_DAYS} days a week`, gg.thisWeek / TARGETS.GYM_DAYS,
+    `<p class="small">Weeks in a row hitting ${TARGETS.GYM_DAYS}: <b>${gg.streak}</b></p>`, gg.thisWeek < TARGETS.GYM_DAYS ? `${TARGETS.GYM_DAYS - gg.thisWeek} session(s) left this week.` : null);
+  // 5 prayers
+  h += goalCard('🕌 Prayers & wird', `${pg.streak} <small class="muted">day streak, all 5</small>`, `wird ${pg.target} verses this month`, pg.wird / Math.max(1, pg.target),
+    `${bar('Wird this month', pg.wird, pg.target, '#C084FC', `${pg.wird} / ${pg.target}`)}<p class="small">At this pace: about <b>${pg.projected}</b> verses by month end ${pg.projected >= pg.target ? '<span class="ok">on track</span>' : '<span class="warn">below target</span>'}</p>
+     ${pg.mostMissed ? `<p class="small">Most missed (30 days): <b>${pg.mostMissed}</b> (${Math.max(...pg.missed)}×)</p>` : '<p class="small ok">No missed prayers in the last 30 days.</p>'}`,
+    pg.mostMissed ? `Set yourself up for ${pg.mostMissed} today.` : null);
+  // 6 money
+  h += goalCard('💰 Money', `${money(mg.projSave)} <small class="muted">projected savings</small>`, `save ${money(mg.target)} a month`, mg.projSave / mg.target,
+    `<p class="small">Spent ${money(mg.sp)} of ${money(mg.bud)} · month-end pace ${money(mg.projSpend)}</p>
+     ${mg.growing ? `<p class="small warn">${EXP_CATS[mg.growing.cat][0]} is growing: ${money(mg.growing.pace)} pace vs ${money(mg.growing.prev)} last month.</p>` : ''}
+     ${mg.history.length ? mg.history.slice(-6).map(([mm, v]) => bar(monthName(mm), Math.max(0, v), mg.target, v >= mg.target ? 'var(--accent)' : 'var(--amber)', money(v))).join('') : ''}`,
+    mg.projSave < mg.target ? `Keep today under ${money(safeToday(ymOf(new Date()), events('SMOKE')))} to stay on budget.` : null);
+  // 8 cross links
+  h += card('🔗 How your goals affect each other', `<p class="muted small">Average cigarettes per day</p>
+    <p class="small"><b>Exercise day</b> (Yes) vs not</p>${vs(x.exercise.cigs, '')}
+    <p class="small"><b>Gap between cigarettes</b> on exercise days vs not</p>${vs(x.exercise.gap, ' min', v => Math.round(v))}
+    <p class="small"><b>Task completion</b> on exercise days vs not</p>${vs(x.exercise.done, '', pct)}
+    <p class="small"><b>All 5 prayers</b> prayed vs not</p>${vs(x.prayers, '')}
+    <p class="small"><b>70%+ of tasks done</b> vs less</p>${vs(x.tasks, '')}
+    <p class="small"><b>Heavy work day</b> (4h+ Work tasks) vs lighter</p>${vs(x.work.cigs, '')}${x.work.gap.yes != null ? `<p class="muted small">Gap on heavy days ${Math.round(x.work.gap.yes)} min vs ${Math.round(x.work.gap.no || 0)} min.</p>` : ''}
+    <p class="muted small">Stress itself isn't measured; heart rate is only a rough hint.</p>`);
+  h += `</div></div>`;
+  // keep the old heart details below
+  const heart = heartDays(), ex = exerciseDays(), eff = effectsAll(), days = []; for (let i = 59; i >= 0; i--) days.push(ymd(addDays(new Date(), -i)));
+  h += `<h2 class="muted" style="margin-top:20px">Heart details</h2><div class="grid2"><div>${card('Heart rate, last 60 days', svgLine([{ name: 'daily average', color: '#E8A24A', values: days.map(d => (heart[d] || {}).avg ?? null) }, { name: 'resting (est.)', color: '#4FD1A5', values: days.map(d => (heart[d] || {}).rest ?? null) }], days.map(d => isExerciseDay(d, ex, heart))))}
+    ${card("Today's recommendations", recommendations().map(r => `<p>• ${esc(r)}</p>`).join('') + '<p class="muted small">General guidance, not medical advice.</p>')}</div>
+    <div>${effectCard('Cigarettes → heart rate', 'Average pulse 20 min before vs 30 min after each cigarette', eff.filter(e => e.type === 'SMOKE'))}
+    ${effectCard('Coffee → heart rate', 'Average pulse 20 min before vs 60 min after each coffee', eff.filter(e => e.type === 'COFFEE'))}</div></div>`;
+  return h;
+}
+
+// ---------- Tasks: drag, resize, week view, copy/paste ----------
+const HOUR_PX = 44; // pixels per hour step when resizing
+const _taskRow = taskRow;
+taskRow = function (o, now) {
+  return _taskRow(o, now)
+    .replace('<div class="task ', `<div draggable="true" data-drag="${o.key}" class="task `)
+    .replace(/<\/div>\s*$/, `<button class="link" data-act="copytask" data-arg="${o.key}" title="Copy">⧉</button><i class="grip" data-resize="${o.key}" title="Drag to change length"></i></div>`);
+};
+function clipBanner() {
+  return UI.clip ? `<div class="card line clip"><span>📋 Copied <b>${esc(UI.clip.title)}</b> (${UI.clip.dur ? fmtDur(UI.clip.dur) : 'no end'}) — click <b>Paste</b> on an hour or a day.</span><button class="link" data-act="clipclear">Clear</button></div>` : '';
+}
+const planBtn = day => `<button class="btn outline" data-act="plan" data-arg="${day}">✨ Plan with Claude</button>`;
+const _vTasks = vTasks;
+vTasks = function () {
+  const toggle = `<div class="seg"><button class="${UI.taskView === 'day' ? 'on' : ''}" data-act="tview" data-arg="day">Day</button><button class="${UI.taskView === 'week' ? 'on' : ''}" data-act="tview" data-arg="week">Week</button></div>`;
+  if (UI.taskView === 'week') return vWeek(toggle);
+  let html = _vTasks().replace('<button class="btn" data-act="addat" data-arg="-1">+ Add</button>', `<div class="row">${toggle}${planBtn(UI.taskDay)}<button class="btn" data-act="addat" data-arg="-1">+ Add</button></div>`);
+  html = html.replace('<div class="hours">', clipBanner() + '<p class="muted small">Drag a task to another hour to move it · drag its bottom edge to change its length (1-hour steps). Repeating tasks change for that day only.</p><div class="hours">');
+  if (UI.clip) html = html.replace(/<button class="slot" data-act="addat" data-arg="(\d+)">\+<\/button>/g, '<button class="slot" data-act="addat" data-arg="$1">+</button><button class="slot paste" data-act="pasteat" data-arg="$1">Paste</button>');
+  return html;
+};
+function vWeek(toggle) {
+  const mon = weekStart(parseYmd(UI.taskDay)), now = Date.now(), today = ymd(new Date());
+  const cols = [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const d = ymd(addDays(mon, i)), occs = occurrencesOn(d).filter(o => !o.isPrayer);
+    return `<div class="wcol ${d === today ? 'today' : ''}" data-dropday="${d}"><div class="wh" data-act="openday" data-arg="${d}"><b>${parseYmd(d).toLocaleDateString('en-US', { weekday: 'short' })}</b> ${parseYmd(d).getDate()}</div>
+      ${occs.map(o => `<div class="wtask ${isLate(o, now) ? 'late' : ''} ${o.done ? 'done' : ''}" draggable="true" data-drag="${o.key}" style="border-left-color:${CATS[o.cat].color}" data-act="edit" data-arg="${o.key}"><small>${fmtTime(o.start)}${o.dur ? '–' + fmtTime(o.start + o.dur * 60000) : ''}</small><b>${esc(o.title)}</b></div>`).join('') || '<p class="muted small">—</p>'}
+      ${UI.clip ? `<button class="slot paste" data-act="pasteday" data-arg="${d}">Paste ${UI.clip.min != null ? fmtMin(UI.clip.min) : ''}</button>` : ''}</div>`;
+  }).join('');
+  return `<div class="head row"><h1>Tasks</h1><div class="row">${toggle}${planBtn(UI.taskDay)}<button class="btn" data-act="addat" data-arg="-1">+ Add</button></div></div>
+    <div class="daynav"><button class="link" data-act="taskday" data-arg="-7">◀</button><div><b>Week of ${mon.toLocaleDateString('en-US', { day: 'numeric', month: 'long' })}</b></div><button class="link" data-act="taskday" data-arg="7">▶</button>${ymd(weekStart(new Date())) !== ymd(mon) ? '<button class="link" data-act="taskday" data-arg="0">This week</button>' : ''}</div>
+    ${clipBanner()}<p class="muted small">Drag a task to another day to move it (same time). Click a task to edit or copy it.</p><div class="weekgrid">${cols}</div>`;
+}
+
+// drag & drop
+let DRAG = null;
+document.addEventListener('dragstart', ev => { const el = ev.target.closest && ev.target.closest('[data-drag]'); if (!el) return; DRAG = el.dataset.drag; ev.dataTransfer.effectAllowed = 'move'; try { ev.dataTransfer.setData('text/plain', DRAG); } catch (e) { } el.classList.add('dragging'); });
+document.addEventListener('dragend', ev => { document.querySelectorAll('.dragging,.dropover').forEach(e => e.classList.remove('dragging', 'dropover')); });
+document.addEventListener('dragover', ev => { const t = ev.target.closest && ev.target.closest('[data-drop],[data-dropday]'); if (!t || !DRAG) return; ev.preventDefault(); document.querySelectorAll('.dropover').forEach(e => e !== t && e.classList.remove('dropover')); t.classList.add('dropover'); });
+document.addEventListener('drop', ev => {
+  const t = ev.target.closest && ev.target.closest('[data-drop],[data-dropday]'); if (!t || !DRAG) return; ev.preventDefault();
+  const o = findOcc(DRAG); DRAG = null; if (!o) return;
+  if (t.dataset.drop) { const h = +t.dataset.drop; if (h === new Date(o.start).getHours()) return render(); moveOcc(o.key, atMinute(dayOf(o.start), h * 60)); toast(`Moved to ${fmtMin(h * 60)}`); }
+  else { const d = t.dataset.dropday; if (d === dayOf(o.start)) return render(); moveOcc(o.key, atMinute(d, minuteOf(o.start))); toast(`Moved to ${parseYmd(d).toLocaleDateString('en-US', { weekday: 'long' })}`); }
+  render();
+});
+// resize by dragging the grip
+document.addEventListener('mousedown', ev => {
+  const g = ev.target.closest && ev.target.closest('[data-resize]'); if (!g) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const o = findOcc(g.dataset.resize); if (!o) return;
+  const row = g.closest('.task'), y0 = ev.clientY, base = o.dur > 0 ? Math.max(60, Math.round(o.dur / 60) * 60) : 60;
+  let dur = base;
+  const tag = document.createElement('span'); tag.className = 'resizetag'; row.appendChild(tag);
+  const show = () => { tag.textContent = `${fmtTime(o.start)} – ${fmtTime(o.start + dur * 60000)} (${fmtDur(dur)})`; };
+  if (!o.dur) dur = 60; show();
+  const mv = e => { dur = Math.max(60, Math.min(16 * 60, base + Math.round((e.clientY - y0) / HOUR_PX) * 60)); show(); };
+  const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); if (dur !== o.dur) { moveOcc(o.key, o.start, dur); toast(`Length ${fmtDur(dur)}`); } render(); };
+  document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+}, true);
+
+// ---------- Today: balance, craving, plan button ----------
+const _vToday = vToday;
+vToday = function () {
+  let h = _vToday();
+  const now = Date.now(), ua = unlockAt(events('SMOKE'), startDate(), now);
+  if (ua && ua !== Infinity) h = h.replace('<div class="qa">', `<button class="qbtn crave" data-act="crave">😮‍💨 I want one now</button><div class="qa">`);
+  h = h.replace('<section class="card "><div class="rings">', balanceCard() + '<section class="card "><div class="rings">');
+  h = h.replace('click a block to edit</small>', `click a block to edit</small>`).replace(/(<div class="head row"><div><h1>[\s\S]*?<\/div>)/, `$1<div class="row">${planBtn(ymd(new Date()))}</div>`);
+  const pt = personalTip(); if (pt) h = h.replace(/<section class="card tip">💡 [\s\S]*?<\/section>/, `<section class="card tip">💡 ${esc(pt)}</section>`);
+  return h;
+};
+
+// ---------- Assistant (Plan with Claude + Report) ----------
+function freeSlots(day) {
+  const occs = occurrencesOn(day).filter(o => !o.isWird), busy = occs.map(o => [o.start, o.start + Math.max(o.dur || 0, o.isPrayer ? 15 : 30) * 60000]).sort((a, b) => a[0] - b[0]);
+  let cur = Math.max(atMinute(day, 9 * 60), day === ymd(new Date()) ? Math.ceil(Date.now() / 1800000) * 1800000 : 0); const end = atMinute(day, 24 * 60 - 1), out = [];
+  for (const [s, e] of busy) { if (s - cur >= 30 * 60000) out.push([cur, s]); cur = Math.max(cur, e); }
+  if (end - cur >= 30 * 60000) out.push([cur, end]);
+  return out;
+}
+function planPrompt(day) {
+  const occs = occurrencesOn(day), pt = Prayer.forDate(day), wk = parseYmd(day).toLocaleDateString('en-US', { weekday: 'long' });
+  const tg = timeGoal();
+  const lines = [
+    `You are helping me plan my day in my "Quit Timer" app. Talk with me in Egyptian Arabic. Ask me what I need to get done, suggest a realistic schedule, and adjust it until I say I agree.`,
+    ``, `Date: ${day} (${wk}). Now: ${new Date().toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`,
+    `Prayer times today (Cairo): ${Prayer.NAMES.map((n, i) => `${n} ${fmtMin(pt[i])}`).join(', ')}. Keep about 15 minutes free for each prayer.`,
+    ``, `Already scheduled:`,
+    ...occs.filter(o => !o.isSalah).map(o => `- ${fmtTime(o.start)}${o.dur ? '–' + fmtTime(o.start + o.dur * 60000) : ''} ${o.title} [${CATS[o.cat].label}]${o.done ? ' (done)' : ''}${o.recId ? ' (repeats)' : ''}`),
+    ``, `Free slots: ${freeSlots(day).map(([a, b]) => `${fmtTime(a)}–${fmtTime(b)}`).join(', ') || 'none'}.`,
+    `Weekly targets: Study ${TARGETS.STUDY / 60} h (done ${fmtDur(tg.study)} so far), Reading ${TARGETS.READING / 60} h (done ${fmtDur(tg.reading)}), Gym ${TARGETS.GYM_DAYS} days (Tue–Fri 10 PM).`,
+    `Categories you can use: Work, Personal, Study, Reading, Gym.`,
+  ];
+  const ps = patternSummary();
+  if (ps.length) lines.push(``, `My patterns (from the app — plan around them, e.g. put demanding work away from my hardest smoking hours, add short breaks after long work blocks):`, ...ps.map(l => '- ' + l));
+  lines.push(``, `IMPORTANT: when I say I agree, end your reply with ONE code block in exactly this format and nothing after it:`,
+    '```json', `[{"title":"Study","category":"Study","date":"${day}","startTime":"11:00","endTime":"13:00","repeat":[]}]`, '```',
+    `Rules for the block: include ONLY the new tasks to add (not the ones already scheduled, not prayers). times are 24-hour HH:MM. category must be one of Work, Personal, Study, Reading, Gym. repeat = weekday numbers Mon=1 … Sun=7 for repeating tasks, [] for one time.`);
+  return lines.join('\n');
+}
+const CAT_BY_LABEL = { work: 'WORK', personal: 'PERSONAL', study: 'STUDY', reading: 'READING', gym: 'GYM', health: 'GYM' };
+function parsePlan(text) {
+  const blocks = [...String(text).matchAll(/```(?:json|quit-timer-plan)?\s*([\s\S]*?)```/gi)].map(m => m[1]);
+  if (!blocks.length) { const i = text.indexOf('['), j = text.lastIndexOf(']'); if (i >= 0 && j > i) blocks.push(text.slice(i, j + 1)); }
+  for (const b of blocks.reverse()) {
+    let data; try { data = JSON.parse(b.trim()); } catch (e) { continue; }
+    if (!Array.isArray(data)) data = data && (data.tasks || data.schedule);
+    if (!Array.isArray(data)) continue;
+    const out = data.map(t => {
+      const cat = CAT_BY_LABEL[String(t.category || t.cat || 'Personal').toLowerCase()] || 'PERSONAL';
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(t.date || t.day || '') ? (t.date || t.day) : UI.taskDay;
+      const st = /^\d{1,2}:\d{2}$/.test(t.startTime || t.start || '') ? (t.startTime || t.start).padStart(5, '0') : null;
+      const en = /^\d{1,2}:\d{2}$/.test(t.endTime || t.end || '') ? (t.endTime || t.end).padStart(5, '0') : '';
+      const rep = (Array.isArray(t.repeat) ? t.repeat : []).map(Number).filter(n => n >= 1 && n <= 7);
+      return { include: true, title: String(t.title || '').trim(), cat, date, start: st, end: en, repeat: rep };
+    }).filter(t => t.title && t.start);
+    if (out.length) return out;
+  }
+  return null;
+}
+function planWarnings(t) {
+  const w = [], st = fromHHMM(t.start), en = fromHHMM(t.end), dur = en != null && en > st ? en - st : 0;
+  const s = atMinute(t.date, st), e = s + Math.max(dur, 15) * 60000;
+  for (const o of occurrencesOn(t.date)) {
+    if (o.isWird) continue;
+    if (o.title.trim().toLowerCase() === t.title.toLowerCase() && Math.abs(o.start - s) < 3600000) { w.push({ dup: true, text: 'Already scheduled' }); continue; }
+    const oe = o.start + Math.max(o.dur || 0, 15) * 60000;
+    if (s < oe && o.start < e) w.push({ dup: false, text: `Overlaps ${o.title} ${fmtTime(o.start)}` });
+  }
+  return w;
+}
+function vAssistant() {
+  const plan = UI.plan;
+  let h = `<div class="head row"><div><h1>Assistant</h1><p class="muted">Plan with your normal Claude chat — free, no API key.</p></div></div>
+  <div class="grid2"><div>
+  ${card('1 · Start a planning chat', `<p class="small">Copies a ready message with your schedule, free slots, prayer times, targets and patterns, then opens Claude in a new tab. Paste it there and talk normally.</p>
+    <div class="row"><input type="date" value="${UI.taskDay}" id="planday">${planBtn('pick')}</div>`)}
+  ${card('2 · Paste Claude\'s final answer', `<p class="small">Paste the reply (or the whole chat) — the app finds the code block by itself.</p>
+    <textarea id="plantext" rows="8" placeholder="Paste here…">${esc(UI.planText)}</textarea>
+    <div class="row"><button class="btn" data-act="parseplan">Read the plan</button>${plan ? '<button class="link" data-act="clearplan">Clear</button>' : ''}</div><p id="planerr" class="warn small"></p>`)}
+  ${card('Report for Claude', `<p class="small">A full text report (cigarettes, coffee, heart, tasks, prayers, wird, budget, goals) to paste into a chat for a review.</p>
+    <div class="row"><button class="btn" data-act="report" data-arg="copy">Copy report</button><button class="btn outline" data-act="report" data-arg="download">Download .md</button></div>`)}
+  </div><div>`;
+  if (plan) {
+    const rows = plan.map((t, i) => {
+      const w = planWarnings(t), dup = w.some(x => x.dup);
+      if (t._auto !== true && dup && t.include) { t.include = false; t._auto = true; }
+      return `<tr class="${t.include ? '' : 'off'}"><td><input type="checkbox" data-pi="${i}" data-pf="include" ${t.include ? 'checked' : ''}></td>
+        <td><input value="${esc(t.title)}" data-pi="${i}" data-pf="title"></td>
+        <td><select data-pi="${i}" data-pf="cat">${catOptions(t.cat)}</select></td>
+        <td><input type="date" value="${t.date}" data-pi="${i}" data-pf="date" ${t.repeat.length ? 'disabled' : ''}></td>
+        <td><input type="time" value="${t.start}" data-pi="${i}" data-pf="start"></td><td><input type="time" value="${t.end}" data-pi="${i}" data-pf="end"></td>
+        <td><div class="days">${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((l, k) => `<button type="button" class="day ${t.repeat.includes(k + 1) ? 'on' : ''}" data-act="planday" data-arg="${i}:${k + 1}">${l}</button>`).join('')}</div></td>
+        <td>${w.map(x => `<span class="pill ${x.dup ? '' : 'warnpill'}">${esc(x.text)}</span>`).join(' ')}</td></tr>`;
+    }).join('');
+    const nIn = plan.filter(t => t.include).length;
+    h += card(`3 · Review (${plan.length} tasks)`, `<div class="scrollx"><table class="plan"><tr><th></th><th>Title</th><th>Category</th><th>Date</th><th>From</th><th>To</th><th>Repeat</th><th></th></tr>${rows}</table></div>
+      <p class="muted small">Untick anything you don't want. Duplicates of tasks you already have are unticked automatically.</p>
+      <button class="btn" data-act="applyplan" ${nIn ? '' : 'disabled'}>Add ${nIn} to schedule</button>`);
+  } else h += card('3 · Review', '<p class="muted">After you paste Claude\'s answer, the tasks appear here so you can check, edit and add them.</p>');
+  h += `</div></div>`;
+  return h;
+}
+function claudeReport() {
+  const s = smokingGoal(), tg = timeGoal(), gg = gymGoal(), pg = prayerGoal(), mg = moneyGoal(), tr = trends(), hg = heartGoal(), cigs = events('SMOKE'), coffees = events('COFFEE');
+  const start = startDate(), today = ymd(new Date()), w = weights(), wk = Object.keys(w).sort();
+  const L = [`# Quit Timer report — ${longDate(today)}`, ``, `Day ${dayNumber(start, today)} of the plan (start ${start}, quit day ${dateOfDay(start, QUIT_DAY)}).`, ``, `## Smoking`,
+    `- Gap today ${gapMinutes(start, today)} min (phase ${phaseOf(dayNumber(start, today))}).`,
+    `- Cigarettes/day: last 7 days ${r1(tr.w7) ?? '—'}, previous 7 ${r1(tr.w7prev) ?? '—'}, last 30 ${r1(tr.d30) ?? '—'}. Today so far ${tr.today}.`,
+    `- Projected zero date: ${s.zeroDate || 'not enough data'}. Money saved vs first week: ${s.saved != null ? money(s.saved) : '—'}.`,
+    `- Urges this week ${s.urgesWeek} (passed ${s.urgesPassed}).`, ...patternSummary().map(l => '- ' + l), ``, `## Last 14 days`, `| Day | Cigarettes | Coffee | Exercise | Rest HR |`, `|---|---|---|---|---|`,
+    ...daysBack(14).map(d => `| ${d} | ${countOn(cigs, d)} | ${countOn(coffees, d)} | ${exDay(d) ? '✓' : ''} | ${(heartDays()[d] || {}).rest != null ? Math.round(heartDays()[d].rest) : '—'} |`),
+    ``, `## Heart`, `- Resting HR by week: ${hg.weeks.map(x => x.rest != null ? Math.round(x.rest) : '—').join(', ')}.`, `- Pulse rise after a cigarette ${sgn(hg.smoke.now)} bpm (2 weeks), after coffee ${sgn(hg.coffee.now)} bpm.`,
+    ``, `## Time & gym`, `- This week: Study ${fmtDur(tg.study)} / ${TARGETS.STUDY / 60}h, Reading ${fmtDur(tg.reading)} / ${TARGETS.READING / 60}h, planned ${fmtDur(tg.planned)}, done ${fmtDur(tg.done)}.`,
+    `- Completion by week: ${tg.weeks.map(x => pct(x.rate)).join(', ')}. Most postponed: ${tg.postponed.map(([t, c]) => `${t} ${c}×`).join(', ') || '—'}.`,
+    `- Gym this week ${gg.thisWeek}/${TARGETS.GYM_DAYS}, weeks in a row at target ${gg.streak}.`, `- Top tasks this month: ${monthMinutesByTitle().slice(0, 5).map(t => `${t.title} ${fmtDur(t.min)}`).join(', ') || '—'}.`,
+    ``, `## Prayers & wird`, `- All-5 streak ${pg.streak} days. Missed in 30 days: ${Prayer.NAMES.map((n, i) => `${n} ${pg.missed[i]}`).join(', ')}.`, `- Wird ${pg.wird}/${pg.target} this month, projected ${pg.projected}.`,
+    ``, `## Money`, `- Budget ${money(mg.bud)}, spent ${money(mg.sp)}, month-end pace ${money(mg.projSpend)}, projected savings ${money(mg.projSave)} (target ${money(mg.target)}).`,
+    `- By category: ${Object.entries(byCategory(ymOf(new Date()), cigs)).filter(([, v]) => v > 0).map(([c, v]) => `${EXP_CATS[c][0]} ${money(v)}`).join(', ') || '—'}.`,
+    ``, `## Weight`, `- ${wk.length ? wk.slice(-6).map(k => `${k}: ${w[k]} kg`).join(', ') : 'no entries'} (start ${WEIGHT_START}, goal ${WEIGHT_TARGET}).`,
+    ``, `Please review my progress against my goals and suggest 3 concrete changes for next week.`];
+  return L.join('\n');
+}
+
+const _render = render;
+render = function () {
+  if (UI.tab === 'assistant' && window.SIGNED_IN) {
+    rollover();
+    $('#nav').innerHTML = TABS.map(([k, l]) => `<button class="nav ${UI.tab === k ? 'on' : ''}" data-act="tab" data-arg="${k}">${l}</button>`).join('');
+    $('#main').innerHTML = vAssistant(); return;
+  }
+  _render();
+};
+
+Object.assign(ACTIONS, {
+  crave: () => cravingDialog(),
+  tview: v => { UI.taskView = v; localStorage.setItem('qt_tview', v); render(); },
+  copytask: k => { const o = findOcc(k); if (!o) return; UI.clip = { title: o.title, cat: o.cat, dur: o.dur, min: minuteOf(o.start) }; toast(`Copied "${o.title}"`); render(); },
+  clipclear: () => { UI.clip = null; render(); },
+  pasteat: hr => { const c = UI.clip; if (!c) return; addOne(c.title, c.cat, atMinute(UI.taskDay, +hr * 60), c.dur); toast(`Pasted at ${fmtMin(+hr * 60)}`); render(); },
+  pasteday: d => { const c = UI.clip; if (!c) return; addOne(c.title, c.cat, atMinute(d, c.min), c.dur); toast(`Pasted on ${parseYmd(d).toLocaleDateString('en-US', { weekday: 'long' })}`); render(); },
+  plan: async day => {
+    if (day === 'pick') day = (document.getElementById('planday') || {}).value || UI.taskDay;
+    const pr = copyText(planPrompt(day));
+    window.open('https://claude.ai/new', '_blank');
+    const ok = await pr;
+    toast(ok ? 'Message copied — paste it in Claude (Ctrl+V)' : 'Could not copy. Try again.');
+    UI.taskDay = day; UI.tab = 'assistant'; localStorage.setItem('qt_tab', 'assistant'); render();
+  },
+  parseplan: () => {
+    const ta = document.getElementById('plantext'); UI.planText = ta ? ta.value : UI.planText;
+    const p = parsePlan(UI.planText);
+    if (!p) { const e = document.getElementById('planerr'); if (e) e.textContent = 'No plan found. Make sure the pasted text includes Claude\'s ```json block.'; return; }
+    UI.plan = p; render();
+  },
+  clearplan: () => { UI.plan = null; UI.planText = ''; render(); },
+  planday: a => { const [i, k] = a.split(':').map(Number); const t = UI.plan[i]; t.repeat = t.repeat.includes(k) ? t.repeat.filter(x => x !== k) : [...t.repeat, k].sort(); render(); },
+  applyplan: () => {
+    const sel = (UI.plan || []).filter(t => t.include && t.title && t.start); let n = 0;
+    for (const t of sel) {
+      const st = fromHHMM(t.start), en = fromHHMM(t.end), dur = en != null && en > st ? en - st : 0;
+      if (t.repeat.length) addRecurring(t.title, t.cat, st, dur, t.repeat); else addOne(t.title, t.cat, atMinute(t.date, st), dur); n++;
+    }
+    UI.plan = null; UI.planText = ''; toast(`Added ${n} task${n === 1 ? '' : 's'} to your schedule ✓`); render();
+  },
+  report: async a => {
+    const r = claudeReport();
+    if (a === 'copy') { toast(await copyText(r) ? 'Report copied' : 'Could not copy'); return; }
+    const blob = new Blob([r], { type: 'text/markdown' }), url = URL.createObjectURL(blob), el = document.createElement('a');
+    el.href = url; el.download = `quit-timer-report-${ymd(new Date())}.md`; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+});
+// review table inputs
+document.addEventListener('change', ev => {
+  const el = ev.target; if (!el.dataset || el.dataset.pi == null || !UI.plan) return;
+  const t = UI.plan[+el.dataset.pi], f = el.dataset.pf;
+  t[f] = f === 'include' ? el.checked : el.value; render();
+});
+document.addEventListener('input', ev => { if (ev.target.id === 'plantext') UI.planText = ev.target.value; });
+// count postpones made through the dialog
+const _postponeTask = postponeTask;
+postponeTask = function (key, ns) { const o = findOcc(key); if (o) countPostpone(o.title); _postponeTask(key, ns); };
 
 </script>
 <script type="module">
