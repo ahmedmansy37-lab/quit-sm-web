@@ -92,6 +92,14 @@ dialog{background:var(--card);color:var(--text);border:0;border-radius:18px;padd
 textarea{width:100%;box-sizing:border-box;background:#0E1318;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;resize:vertical}
 .scrollx{overflow-x:auto}table.plan input,table.plan select{padding:4px 6px;font-size:13px;max-width:130px}table.plan tr.off{opacity:.45}table.plan .day{width:24px;height:24px;font-size:11px}
 .goal .huge small{font-size:13px;font-weight:400}
+.hour>span small{display:block;font-size:11px;font-weight:400}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.cw{color:var(--muted);font-size:11px;text-align:center}
+.cd{position:relative;background:#ffffff06;border:1px solid var(--line);border-radius:8px;color:var(--text);padding:4px 2px;min-height:44px;cursor:pointer;font:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}
+.cd::before{content:'';position:absolute;left:0;right:0;bottom:0;height:calc(var(--h) * 100%);background:#E8A24A22}.cd b,.cd small{position:relative}.cd small{font-size:10px;color:var(--amber)}
+.cd.today{border-color:var(--accent)}.cd.sel{background:var(--accent);color:#06231A}.cd.sel small{color:#06231A}.cd.future{opacity:.45}
+table.stmt{width:100%;border-collapse:collapse;font-size:13px}table.stmt th,table.stmt td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}table.stmt th{color:var(--muted);font-weight:500}
+table.stmt .num{text-align:right;white-space:nowrap}table.stmt tr.tot td{font-weight:700;border-top:2px solid var(--line)}table.stmt tr.clickable{cursor:pointer}table.stmt tr.clickable:hover{background:#ffffff08}
+.scrolly{max-height:55vh;overflow:auto;margin:8px 0}.chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:13px}.row.wrap{flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -301,9 +309,10 @@ function checkIns(now = Date.now()) {
   const salah = occs.filter(o => o.isSalah).sort((a, b) => a.start - b.start);
   salah.forEach((p, i) => {
     if (p.done || p.start > now) return;
+    // ask only in the last 15 min before the next prayer; Isha: 11:45 PM – midnight
     const next = salah[i + 1];
-    const askAt = next ? next.start - 15 * 60000 : p.start + 2 * 3600000;
-    if (now >= askAt) out.push({ o: p, q: `Did you pray ${p.title} today?`, prayer: true });
+    const end = next ? next.start : atMinute(ymd(new Date(now)), 24 * 60);
+    if (now >= end - 15 * 60000 && now < end) out.push({ o: p, q: `Did you pray ${p.title} today?`, prayer: true });
   });
   return out;
 }
@@ -356,7 +365,10 @@ function safeToday(m, cigs) { const t = new Date(); const left = ymOf(t) === m ?
 function deleteExpense(id) { saveExpenses(expenses().filter(e => e.id !== id)); }
 const expensesIn = m => expenses().filter(e => ymOf(new Date(e.time)) === m).sort((a, b) => b.time - a.time);
 const incomeStatus = (m, id) => BG()[`income_${m}_${id}`] || null;
-const setIncome = (m, id, st) => WRITE('quit_timer_budget', `income_${m}_${id}`, st); // null = delete
+function setIncome(m, id, st) { // null = delete; also remember the day it was received
+  WRITE('quit_timer_budget', `income_${m}_${id}`, st);
+  WRITE('quit_timer_budget', `income_date_${m}_${id}`, st === 'DONE' ? ymd(new Date()) : null);
+}
 const incomeCollected = m => INCOME.filter(i => incomeStatus(m, i.id) === 'DONE').reduce((s, i) => s + i.amount, 0);
 const rentState = m => BG()['rent_' + m] || null;
 function payRent(m) {
@@ -472,21 +484,40 @@ function compare(days, pred, fn) { // avg of fn over days where pred is true vs 
   return { yes: avg(a), no: avg(b), nYes: a.length, nNo: b.length };
 }
 
+const STEPS_TARGET = 8000;
+function stepsOn(day) { return +(jsonOr(Q().steps_cache, {})[day] || 0); }
+function smokeScore(cigs, start, day) {
+  const W0 = 9 * 60, WIN = 14 * 60, now = Date.now(), isToday = day === ymd(new Date());
+  const y = countOn(cigs, ymd(addDays(parseYmd(day), -1))), target = Math.max(1, y - 1);
+  const tGap = Math.max(WIN / target, gapMinutes(start, day));
+  const elapsed = isToday ? Math.max(0, Math.min(WIN, (now - atMinute(day, W0)) / 60000)) : WIN;
+  const list = cigs.filter(t => dayOf(t) === day).sort((a, b) => a - b), n = list.length;
+  const allowed = 1 + elapsed / tGap;
+  const pace = n ? Math.round(25 * Math.min(1, allowed / n)) : 25;
+  let spacing = 15, shortest = null;
+  if (n >= 2) {
+    const g = []; for (let i = 1; i < n; i++) { const m = (list[i] - list[i - 1]) / 60000; g.push(Math.min(1, m / tGap)); if (shortest == null || m < shortest) shortest = m; }
+    let a = avg(g);
+    if (isToday) { const open = Math.min(1, (now - list[n - 1]) / 60000 / tGap); const withOpen = (a * g.length + open) / (g.length + 1); if (withOpen > a) a = withOpen; }
+    spacing = Math.round(15 * a);
+  }
+  let hint = `${n} today · aim ≤ ${target}, one every ${Math.round(tGap)} min`;
+  if (pace < 25) hint = `Too fast: ${n} smoked, ~${r1(allowed)} allowed by now`;
+  else if (spacing < 15 && shortest != null) hint = `Shortest gap ${Math.round(shortest)} min (aim ${Math.round(tGap)})`;
+  return { k: 'smoke', name: 'Smoking', got: pace + spacing, max: BALANCE_W.smoke, hint, pace, spacing };
+}
+
 // ---- daily balance score ----
 function balanceScore(day = ymd(new Date())) {
   const cigs = events('SMOKE'), start = startDate(), prev = ymd(addDays(parseYmd(day), -1));
   const parts = [];
-  // smoking: aim for at least one fewer than yesterday
-  let sm, sh;
-  if (isQuit(start, day)) { sm = BALANCE_W.smoke; sh = 'Smoke-free'; }
-  else {
-    const t = countOn(cigs, day), y = countOn(cigs, prev), target = Math.max(0, y - 1);
-    if (!cigs.some(c => dayOf(c) < day)) { sm = BALANCE_W.smoke; sh = `${t} today`; }
-    else { sm = t <= target ? BALANCE_W.smoke : Math.max(0, BALANCE_W.smoke - 10 * (t - target)); sh = `${t} today · aim ≤ ${target}`; }
-  }
-  parts.push({ k: 'smoke', name: 'Smoking', got: sm, max: BALANCE_W.smoke, hint: sh });
-  const moved = exDay(day);
-  parts.push({ k: 'move', name: 'Movement', got: moved ? BALANCE_W.move : 0, max: BALANCE_W.move, hint: moved ? 'Exercised ✓' : 'Not yet' });
+  // smoking (40) = pace 25 + spacing 15, judged over 9 AM – 11 PM against a target gap
+  if (isQuit(start, day)) parts.push({ k: 'smoke', name: 'Smoking', got: BALANCE_W.smoke, max: BALANCE_W.smoke, hint: 'Smoke-free' });
+  else if (!cigs.some(c => dayOf(c) < day)) parts.push({ k: 'smoke', name: 'Smoking', got: BALANCE_W.smoke, max: BALANCE_W.smoke, hint: `${countOn(cigs, day)} today` });
+  else parts.push(smokeScore(cigs, start, day));
+  // movement (20) = exercise 12 + steps 8
+  const moved = exDay(day), steps = stepsOn(day), ex = moved ? 12 : 0, st = Math.round(8 * Math.min(1, steps / STEPS_TARGET));
+  parts.push({ k: 'move', name: 'Movement', got: ex + st, max: BALANCE_W.move, hint: `${moved ? 'Exercised ✓' : 'No exercise yet'} · ${steps.toLocaleString('en-US')} / ${STEPS_TARGET.toLocaleString('en-US')} steps` });
   const occs = occurrencesOn(day), sal = occs.filter(o => o.isSalah), tk = occs.filter(o => !o.isPrayer);
   const pf = sal.length ? sal.filter(o => o.done).length / sal.length : 1, tf = tk.length ? tk.filter(o => o.done).length / tk.length : 1;
   parts.push({ k: 'tasks', name: 'Tasks & prayers', got: Math.round(BALANCE_W.tasks * (pf + tf) / 2), max: BALANCE_W.tasks, hint: `${sal.filter(o => o.done).length}/5 prayers · ${tk.filter(o => o.done).length}/${tk.length} tasks` });
@@ -821,7 +852,7 @@ function vToday() {
 function taskRow(o, now) {
   const late = isLate(o, now);
   const t = fmtTime(o.start) + (o.dur ? ' – ' + fmtTime(o.start + o.dur * 60000) : '');
-  return `<div class="task ${late ? 'late' : ''} ${o.done ? 'done' : ''}" style="border-left-color:${CATS[o.cat].color};min-height:${o.dur ? 54 + Math.min(120, o.dur) / 2 : 54}px">
+  return `<div class="task ${late ? 'late' : ''} ${o.done ? 'done' : ''}" style="border-left-color:${CATS[o.cat].color};min-height:${o.dur ? Math.max(54, Math.round(o.dur / 60 * 56) - 10) : 54}px">
     <div class="tmain" data-act="edit" data-arg="${o.key}"><small>${t}${o.overdue && !o.done ? ' · overdue' : ''}${o.recId ? ' · repeats' : ''}</small><b>${esc(o.title)}</b></div>
     ${o.done ? `<button class="link ok" data-act="undone" data-arg="${o.key}">✓ Done</button>` : `<button class="link ok" data-act="done" data-arg="${o.key}">Done</button><button class="link amber" data-act="postpone" data-arg="${o.key}">Postpone</button>`}
   </div>`;
@@ -833,14 +864,27 @@ function vTasks() {
   const early = occs.filter(o => new Date(o.start).getHours() < 9);
   let rows = '';
   if (early.length) rows += `<div class="hour"><span>Early</span><div>${early.map(o => taskRow(o, now)).join('')}</div></div>`;
-  for (let h = 9; h <= 23; h++) {
+  // a task stretching over several hours is one block; the hour rows it covers are merged into it
+  const endHour = o => o.dur ? Math.ceil((minuteOf(o.start) + o.dur) / 60) : new Date(o.start).getHours() + 1;
+  let h = 9;
+  while (h <= 23) {
     const items = occs.filter(o => new Date(o.start).getHours() === h);
+    let to = h + 1;
+    if (items.length) {
+      to = Math.max(to, ...items.map(endHour));
+      // keep extending while covered hours have no tasks of their own that start there… they merge too
+      for (let k = h + 1; k < to && k <= 23; k++) { const own = occs.filter(o => new Date(o.start).getHours() === k); if (own.length) { own.forEach(o => items.push(o)); to = Math.max(to, ...own.map(endHour)); } }
+    }
+    to = Math.min(to, 24);
+    const hasNow = curH >= h && curH < to;
     let inner;
-    if (h === curH) {
+    if (hasNow) {
       const past = items.filter(o => o.start <= now), fut = items.filter(o => o.start > now);
       inner = past.map(o => taskRow(o, now)).join('') + nowLine(now) + fut.map(o => taskRow(o, now)).join('') + (items.length ? '' : `<button class="slot" data-act="addat" data-arg="${h}">+</button>`);
     } else inner = items.length ? items.map(o => taskRow(o, now)).join('') : `<button class="slot" data-act="addat" data-arg="${h}">+</button>`;
-    rows += `<div class="hour ${h === curH ? 'now' : ''}" data-drop="${h}"><span>${fmtMin(h * 60).replace(':00', '')}</span><div>${inner}</div></div>`;
+    const label = fmtMin(h * 60).replace(':00', '') + (to - h > 1 ? `<small>– ${fmtMin((to % 24) * 60).replace(':00', '')}</small>` : '');
+    rows += `<div class="hour ${hasNow ? 'now' : ''}" data-drop="${h}"><span>${label}</span><div>${inner}</div></div>`;
+    h = to;
   }
   return `<div class="head row"><h1>Tasks</h1><button class="btn" data-act="addat" data-arg="-1">+ Add</button></div>
     ${dayNav(d, 'taskday')}
@@ -894,7 +938,7 @@ function vBudget() {
   ${card('Income · ' + parseYm(m).toLocaleDateString('en-US', { month: 'long' }), income + `<p class="muted small">Collected: ${money(incomeCollected(m))} → budget for ${monthName(addMonths(m, 1))}</p>`)}
   ${card('Rent', `<div class="line"><span><b>${money(CFG.RENT)}</b><small> due by day ${CFG.RENT_DUE_DAY}</small></span>${!rs ? `<button class="link ok" data-act="rent" data-arg="pay">Paid</button><button class="link" data-act="rent" data-arg="skip">Skip</button>` : `<button class="link ${rs.startsWith('paid') ? 'ok' : ''}" data-act="rent" data-arg="undo">${rs.startsWith('paid') ? '✓ Paid' : 'Skipped'}</button>`}</div>`)}
   </div><div>
-  ${card('Spending by category', maxC > 0 ? Object.entries(bc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([c, v]) => bar(EXP_CATS[c][0], v, maxC, EXP_CATS[c][1], money(v))).join('') : '<p class="muted">No spending yet.</p>')}
+  ${card('Spending by category', maxC > 0 ? Object.entries(bc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<div class="clickable" data-act="catdetail" data-arg="${c}" title="Show details">${bar(EXP_CATS[c][0], v, maxC, EXP_CATS[c][1], money(v))}</div>`).join('') + '<p class="muted small">Click a category to see its details.</p>' : '<p class="muted">No spending yet.</p>')}
   ${card('By payment method', maxM > 0 ? Object.entries(bm).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => bar(k === 'NONE' ? 'Rent / auto' : METHODS[k], v, maxM, 'var(--amber)', money(v))).join('') : '<p class="muted">No expenses yet.</p>')}
   ${Object.keys(billsBreakdown(m)).length ? card('Bills by type', (() => { const bb = billsBreakdown(m), mx = Math.max(...Object.values(bb)); return Object.entries(bb).sort((a, b) => b[1] - a[1]).map(([k, v]) => bar(k, v, mx, EXP_CATS.BILLS[1], money(v))).join(''); })()) : ''}
   ${card('Expenses', exps.length ? exps.map(e => `<div class="line clickable" data-act="editexp" data-arg="${e.id}"><i class="dot" style="background:${EXP_CATS[e.cat][1]}"></i><span>${EXP_CATS[e.cat][0]}${e.sub ? ' · ' + esc(e.sub) : ''} · ${METHODS[e.method] || e.method}<small class="muted"> ${new Date(e.time).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>${e.note ? `<br><small class="muted">${esc(e.note)}</small>` : ''}</span><b>${money(e.amount)}</b></div>`).join('') : '<p class="muted">Nothing added this month.</p>')}
@@ -976,21 +1020,31 @@ function weightCard() {
 }
 
 function checkInDialog() {
-  const items = checkIns().filter(c => !UI.skipped.has(c.o.key));
+  let items = checkIns().filter(c => !UI.skipped.has(c.o.key));
   if (!items.length || document.querySelector('dialog')) return;
-  dialog(`<h3>Quick check-in</h3>${items.map((c, i) => `<div style="margin-bottom:8px"><b>${esc(c.q)}</b><br><small class="muted">${fmtTime(c.o.start)}${c.o.dur ? ' – ' + fmtTime(c.o.start + c.o.dur * 60000) : ''}</small><div class="row">
-      <button type="button" class="link ok" data-ci="done" data-i="${i}">${c.prayer ? 'Yes, done' : 'Done'}</button>
-      ${c.prayer ? '' : `<button type="button" class="link amber" data-ci="later" data-i="${i}">Postpone</button>`}
-      <button type="button" class="link" data-ci="skip" data-i="${i}">${c.prayer ? 'Not yet' : 'Not done'}</button></div></div>`).join('')}
-    <button class="btn" value="close">Close</button>`, d => {
+  const itemHtml = c => `<div class="ci"><b>${esc(c.q)}</b><br><small class="muted">${fmtTime(c.o.start)}${c.o.dur ? ' – ' + fmtTime(c.o.start + c.o.dur * 60000) : ''}</small><div class="row">
+      <button type="button" class="link ok" data-ci="done" data-k="${c.o.key}">${c.prayer ? 'Yes, done' : 'Done'}</button>
+      ${c.prayer ? '' : `<button type="button" class="link amber" data-ci="later" data-k="${c.o.key}">Postpone</button>`}
+      <button type="button" class="link" data-ci="skip" data-k="${c.o.key}">${c.prayer ? 'Not yet' : 'Not done'}</button></div></div>`;
+  const body = () => `<h3>Quick check-in</h3><p class="muted small">${items.length} left</p>${itemHtml(items[0])}<button class="btn" value="close">Close</button>`;
+  dialog(body(), d => {
+    const form = d.querySelector('form');
     d.addEventListener('click', ev => {
       const b = ev.target.closest('[data-ci]'); if (!b) return;
-      const c = items[+b.dataset.i]; b.closest('div[style]').style.opacity = 0.4;
-      if (b.dataset.ci === 'done') setTaskDone(c.o.key, true);
-      else if (b.dataset.ci === 'skip') UI.skipped.add(c.o.key);
-      else { d.close(); UI.skipped.add(c.o.key); setTimeout(() => postponeDialog(c.o.key), 50); }
+      const k = b.dataset.k, act = b.dataset.ci;
+      items = items.filter(c => c.o.key !== k); UI.skipped.add(k);
+      if (act === 'done') setTaskDone(k, true);
+      if (act === 'later') {
+        d._keep = true; d.close(); setTimeout(() => {
+          postponeDialog(k);
+          const pd = document.querySelector('dialog');
+          if (pd) pd.addEventListener('close', () => setTimeout(checkInDialog, 50)); else checkInDialog();
+        }, 50); return;
+      }
+      if (!items.length) { d.close(); return; }
+      form.innerHTML = body();
     });
-    d.addEventListener('close', () => { items.forEach(c => UI.skipped.add(c.o.key)); render(); });
+    d.addEventListener('close', () => { if (!d._keep) items.forEach(c => UI.skipped.add(c.o.key)); render(); });
   });
 }
 window.addEventListener('focus', () => { if (window.SIGNED_IN && window.SEEDED) checkInDialog(); });
@@ -1255,7 +1309,7 @@ function vInsights() {
     tg.study < TARGETS.STUDY ? `${fmtDur(Math.max(0, TARGETS.STUDY - tg.study))} of study left this week — about ${fmtDur(Math.ceil((TARGETS.STUDY - tg.study) / tg.daysLeft))} a day.` : 'Study target reached this week.');
   // 4 gym
   h += goalCard('🏋️ Gym', `${gg.thisWeek} / ${TARGETS.GYM_DAYS} <small class="muted">days this week</small>`, `${TARGETS.GYM_DAYS} days a week`, gg.thisWeek / TARGETS.GYM_DAYS,
-    `<p class="small">Weeks in a row hitting ${TARGETS.GYM_DAYS}: <b>${gg.streak}</b></p>`, gg.thisWeek < TARGETS.GYM_DAYS ? `${TARGETS.GYM_DAYS - gg.thisWeek} session(s) left this week.` : null);
+    `<p class="small">Weeks in a row hitting ${TARGETS.GYM_DAYS}: <b>${gg.streak}</b></p>` + (() => { const mon = weekStart(new Date()), d = [0, 1, 2, 3, 4, 5, 6].map(i => ymd(addDays(mon, i))).filter(x => x <= ymd(new Date())), st = d.map(stepsOn); return `<p class="small">Steps this week: <b>${st.reduce((a, b) => a + b, 0).toLocaleString('en-US')}</b> · today ${stepsOn(ymd(new Date())).toLocaleString('en-US')} / ${STEPS_TARGET.toLocaleString('en-US')}</p>${bar('Steps today', stepsOn(ymd(new Date())), STEPS_TARGET, '#5EC8E5', Math.round(Math.min(1, stepsOn(ymd(new Date())) / STEPS_TARGET) * 100) + '%')}`; })(), gg.thisWeek < TARGETS.GYM_DAYS ? `${TARGETS.GYM_DAYS - gg.thisWeek} session(s) left this week.` : null);
   // 5 prayers
   h += goalCard('🕌 Prayers & wird', `${pg.streak} <small class="muted">day streak, all 5</small>`, `wird ${pg.target} verses this month`, pg.wird / Math.max(1, pg.target),
     `${bar('Wird this month', pg.wird, pg.target, '#C084FC', `${pg.wird} / ${pg.target}`)}<p class="small">At this pace: about <b>${pg.projected}</b> verses by month end ${pg.projected >= pg.target ? '<span class="ok">on track</span>' : '<span class="warn">below target</span>'}</p>
@@ -1287,7 +1341,7 @@ function vInsights() {
 }
 
 // ---------- Tasks: drag, resize, week view, copy/paste ----------
-const HOUR_PX = 44; // pixels per hour step when resizing
+const HOUR_PX = 56; // pixels per hour step when resizing
 const _taskRow = taskRow;
 taskRow = function (o, now) {
   return _taskRow(o, now)
@@ -1529,6 +1583,151 @@ document.addEventListener('input', ev => { if (ev.target.id === 'plantext') UI.p
 // count postpones made through the dialog
 const _postponeTask = postponeTask;
 postponeTask = function (key, ns) { const o = findOcc(key); if (o) countPostpone(o.title); _postponeTask(key, ns); };
+
+// ===================== Stage 3 — budget details, calendar, account statement (laptop) =====================
+// income: remember the day it was received
+const incomeDate = (m, id) => BG()[`income_date_${m}_${id}`] || null;
+Object.assign(UI, { calDay: null, stmt: null });
+
+function dayCigCost(cigs, d) { return countOn(cigs, d) * CFG.PER_CIG; }
+function dayExpenses(d) { return expenses().filter(e => dayOf(e.time) === d).sort((a, b) => a.time - b.time); }
+function dayTotal(cigs, d) { return dayExpenses(d).reduce((s, e) => s + e.amount, 0) + dayCigCost(cigs, d); }
+function incomeRows(from, to) {
+  const out = []; let m = from.slice(0, 7);
+  while (m <= to.slice(0, 7)) {
+    for (const i of INCOME) if (incomeStatus(m, i.id) === 'DONE') {
+      const d = incomeDate(m, i.id) || `${m}-${pad(Math.min(i.from, monthLen(m)))}`;
+      if (d >= from && d <= to) out.push({ date: d, time: parseYmd(d).getTime(), type: 'Income', cat: i.name, details: incomeDate(m, i.id) ? '' : 'date estimated', method: '', amount: i.amount });
+    }
+    m = addMonths(m, 1);
+  }
+  return out;
+}
+function statementRows(from, to, mode, cats) {
+  const cigs = events('SMOKE'), rows = [];
+  if (mode !== 'inc') {
+    expenses().filter(e => { const d = dayOf(e.time); return d >= from && d <= to && cats.includes(e.cat); })
+      .forEach(e => rows.push({ date: dayOf(e.time), time: e.time, type: 'Expense', cat: EXP_CATS[e.cat][0] + (e.sub ? ' · ' + e.sub : ''), details: e.note || '', method: METHODS[e.method] || e.method, amount: -e.amount }));
+    if (cats.includes('CIGARETTES')) for (let d = from; d <= to; d = ymd(addDays(parseYmd(d), 1))) {
+      const n = countOn(cigs, d); if (n) rows.push({ date: d, time: parseYmd(d).getTime() + 86399000, type: 'Expense', cat: 'Cigarettes', details: `Cigarettes ×${n}`, method: 'Counter', amount: -n * CFG.PER_CIG });
+    }
+  }
+  if (mode !== 'exp') rows.push(...incomeRows(from, to));
+  rows.sort((a, b) => a.time - b.time);
+  const out = rows.filter(r => r.amount < 0).reduce((s, r) => s - r.amount, 0), inc = rows.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0);
+  return { rows, out, inc, net: inc - out };
+}
+const fmtD = d => parseYmd(d).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+
+// ---------- category detail ----------
+function catDetailDialog(m, c) {
+  const cigs = events('SMOKE');
+  let rows;
+  if (c === 'CIGARETTES') {
+    rows = []; for (let i = 1; i <= monthLen(m); i++) { const d = `${m}-${pad(i)}`, n = countOn(cigs, d); if (n) rows.push(`<tr><td>${fmtD(d)}</td><td>Cigarettes ×${n}</td><td>Counter</td><td class="num">${money(n * CFG.PER_CIG)}</td></tr>`); }
+  } else rows = expensesIn(m).filter(e => e.cat === c).sort((a, b) => a.time - b.time).map(e => `<tr class="clickable" data-act="editexp" data-arg="${e.id}"><td>${new Date(e.time).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td><td>${e.sub ? `<b>${esc(e.sub)}</b> ` : ''}${esc(e.note || '')}</td><td>${METHODS[e.method] || e.method}</td><td class="num">${money(e.amount)}</td></tr>`);
+  const total = byCategory(m, cigs)[c] || 0;
+  dialog(`<h3><i class="dot" style="background:${EXP_CATS[c][1]}"></i> ${EXP_CATS[c][0]} · ${monthName(m)}</h3>
+    <div class="stats">${stat('total', money(total))}${stat(c === 'CIGARETTES' ? 'days' : 'times', rows.length)}${stat('average', money(rows.length ? total / rows.length : 0))}</div>
+    <div class="scrolly"><table class="stmt"><tr><th>Date</th><th>Details</th><th>Method</th><th class="num">Amount</th></tr>${rows.join('') || '<tr><td colspan="4" class="muted">Nothing yet.</td></tr>'}</table></div>
+    <div class="row"><button class="btn" value="">Close</button></div>`, d => d.addEventListener('click', ev => { const t = ev.target.closest('[data-act="editexp"]'); if (t) { d.close(); setTimeout(() => editExpenseDialog(t.dataset.arg), 50); } }));
+}
+
+// ---------- calendar ----------
+function calendarCard(m) {
+  const cigs = events('SMOKE'), today = ymd(new Date());
+  if (!UI.calDay || UI.calDay.slice(0, 7) !== m) UI.calDay = today.slice(0, 7) === m ? today : `${m}-01`;
+  const first = parseYmd(`${m}-01`), lead = (first.getDay() + 6) % 7, len = monthLen(m);
+  const totals = []; for (let i = 1; i <= len; i++) totals.push(dayTotal(cigs, `${m}-${pad(i)}`));
+  const mx = Math.max(1, ...totals);
+  let cells = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => `<div class="cw">${w}</div>`).join('') + '<div></div>'.repeat(lead);
+  for (let i = 1; i <= len; i++) {
+    const d = `${m}-${pad(i)}`, v = totals[i - 1];
+    cells += `<button class="cd ${d === UI.calDay ? 'sel' : ''} ${d === today ? 'today' : ''} ${d > today ? 'future' : ''}" data-act="calday" data-arg="${d}" style="--h:${v / mx}"><b>${i}</b><small>${v ? Math.round(v) : ''}</small></button>`;
+  }
+  const d = UI.calDay, exps = dayExpenses(d), nC = countOn(cigs, d);
+  const list = exps.map(e => `<div class="line clickable" data-act="editexp" data-arg="${e.id}"><i class="dot" style="background:${EXP_CATS[e.cat][1]}"></i><span>${EXP_CATS[e.cat][0]}${e.sub ? ' · ' + esc(e.sub) : ''} · ${METHODS[e.method] || e.method}<small class="muted"> ${fmtTime(e.time)}</small>${e.note ? `<br><small class="muted">${esc(e.note)}</small>` : ''}</span><b>${money(e.amount)}</b></div>`).join('')
+    + (nC ? `<div class="line"><i class="dot" style="background:${EXP_CATS.CIGARETTES[1]}"></i><span>Cigarettes ×${nC}<small class="muted"> from the counter</small></span><b>${money(nC * CFG.PER_CIG)}</b></div>` : '');
+  const inc = incomeRows(d, d);
+  return card('Calendar', `<div class="cal">${cells}</div>
+    <div class="line" style="margin-top:10px"><b>${d === today ? 'Today · ' : ''}${fmtD(d)}</b><b class="huge" style="font-size:20px">${money(dayTotal(cigs, d))}</b></div>
+    ${list || '<p class="muted">No spending on this day.</p>'}
+    ${inc.map(r => `<div class="line"><span>💵 ${esc(r.cat)} received</span><b class="ok">+${money(r.amount)}</b></div>`).join('')}
+    <div class="row" style="margin-top:8px"><button class="btn" data-act="stmtdlg">📄 Account statement</button><button class="link" data-act="stmtday" data-arg="${d}">Statement for this day</button></div>`);
+}
+
+// ---------- statement ----------
+function statementDialog(pre) {
+  const t = ymd(new Date()), s = pre || UI.stmt || { from: `${t.slice(0, 7)}-01`, to: t, mode: 'exp', cats: Object.keys(EXP_CATS), single: false };
+  dialog(`<h3>Account statement</h3>
+    <div class="row"><label><input type="radio" name="per" value="day" ${s.single ? 'checked' : ''}> One day</label><label><input type="radio" name="per" value="range" ${s.single ? '' : 'checked'}> From – to</label></div>
+    <div class="row"><label>From <input type="date" id="st_from" value="${s.from}"></label><label id="st_tol" ${s.single ? 'hidden' : ''}>To <input type="date" id="st_to" value="${s.to}"></label></div>
+    <p class="muted small" style="margin:6px 0 2px">Show</p>
+    <div class="row">${[['exp', 'Expenses only'], ['both', 'Expenses + income'], ['inc', 'Income only']].map(([k, l]) => `<label><input type="radio" name="mode" value="${k}" ${s.mode === k ? 'checked' : ''}> ${l}</label>`).join('')}</div>
+    <p class="muted small" style="margin:6px 0 2px">Categories <button type="button" class="link" id="st_all">all</button> <button type="button" class="link" id="st_none">none</button></p>
+    <div class="row wrap" id="st_cats">${Object.keys(EXP_CATS).map(c => `<label class="chip"><input type="checkbox" value="${c}" ${s.cats.includes(c) ? 'checked' : ''}> ${EXP_CATS[c][0]}</label>`).join('')}</div>
+    <p id="st_err" class="warn small"></p>
+    <div class="row"><button class="btn" value="show">Show statement</button><button class="link" value="">Cancel</button></div>`, d => {
+    d.addEventListener('change', () => { const single = d.querySelector('input[name=per]:checked').value === 'day'; d.querySelector('#st_tol').hidden = single; });
+    d.querySelector('#st_all').onclick = () => d.querySelectorAll('#st_cats input').forEach(i => i.checked = true);
+    d.querySelector('#st_none').onclick = () => d.querySelectorAll('#st_cats input').forEach(i => i.checked = false);
+    d.querySelector('form').addEventListener('submit', ev => {
+      if (ev.submitter && ev.submitter.value !== 'show') return;
+      const single = d.querySelector('input[name=per]:checked').value === 'day', from = d.querySelector('#st_from').value, to = single ? from : d.querySelector('#st_to').value;
+      const mode = d.querySelector('input[name=mode]:checked').value, cats = [...d.querySelectorAll('#st_cats input:checked')].map(i => i.value);
+      const err = !from || !to ? 'Pick the dates.' : to < from ? '"To" must be after "From".' : mode !== 'inc' && !cats.length ? 'Pick at least one category.' : '';
+      if (err) { ev.preventDefault(); d.querySelector('#st_err').textContent = err; return; }
+      UI.stmt = { from, to: to, mode, cats, single };
+    });
+    d.addEventListener('close', () => { if (d.returnValue === 'show') { render(); setTimeout(() => { const el = document.getElementById('stmt'); el && el.scrollIntoView && el.scrollIntoView({ behavior: 'smooth' }); }, 50); } });
+  });
+}
+function statementTitle(s) {
+  return `Account statement · ${s.from === s.to ? fmtD(s.from) : fmtD(s.from) + ' → ' + fmtD(s.to)} · ${{ exp: 'Expenses', both: 'Expenses + income', inc: 'Income' }[s.mode]}` +
+    (s.mode !== 'inc' && s.cats.length < Object.keys(EXP_CATS).length ? ` · ${s.cats.map(c => EXP_CATS[c][0]).join(', ')}` : '');
+}
+function statementTable(r) {
+  return `<table class="stmt"><tr><th>Date</th><th>Type</th><th>Category</th><th>Details</th><th>Method</th><th class="num">Amount</th></tr>
+    ${r.rows.map(x => `<tr><td>${x.type === 'Income' || x.cat === 'Cigarettes' ? fmtD(x.date) : new Date(x.time).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</td><td>${x.type}</td><td>${esc(x.cat)}</td><td>${esc(x.details)}</td><td>${esc(x.method)}</td><td class="num ${x.amount > 0 ? 'ok' : ''}">${x.amount > 0 ? '+' : '−'}${money(Math.abs(x.amount))}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No transactions.</td></tr>'}
+    <tr class="tot"><td colspan="5">Total expenses</td><td class="num">−${money(r.out)}</td></tr>
+    ${r.inc || UI.stmt.mode !== 'exp' ? `<tr class="tot"><td colspan="5">Total income</td><td class="num ok">+${money(r.inc)}</td></tr><tr class="tot"><td colspan="5">Difference</td><td class="num ${r.net >= 0 ? 'ok' : 'warn'}">${r.net >= 0 ? '+' : '−'}${money(Math.abs(r.net))}</td></tr>` : ''}</table>`;
+}
+function statementCard() {
+  const s = UI.stmt; if (!s) return '';
+  const r = statementRows(s.from, s.to, s.mode, s.cats);
+  return `<section class="card" id="stmt"><div class="line"><h3 style="margin:0">${esc(statementTitle(s))}</h3><span class="row"><button class="btn outline" data-act="stmtcsv">⬇ Download Excel</button><button class="btn outline" data-act="stmtprint">🖨 Print / PDF</button><button class="link" data-act="stmtdlg">Change</button><button class="link" data-act="stmtclose">✕</button></span></div>
+    <p class="muted small">${r.rows.length} transactions</p><div class="scrollx">${statementTable(r)}</div></section>`;
+}
+
+const _vBudget = vBudget;
+vBudget = function () {
+  let h = _vBudget();
+  h = h.replace('<div class="grid2">', statementCard() + '<div class="grid2">');
+  h = h.replace(/(<section class="card ?"><h3>Add expense<\/h3>)/, calendarCard(UI.month) + '$1');
+  return h;
+};
+
+Object.assign(ACTIONS, {
+  catdetail: c => catDetailDialog(UI.month, c),
+  calday: d => { UI.calDay = d; render(); },
+  stmtdlg: () => statementDialog(),
+  stmtday: d => { UI.stmt = { from: d, to: d, mode: 'both', cats: Object.keys(EXP_CATS), single: true }; render(); setTimeout(() => { const el = document.getElementById('stmt'); el && el.scrollIntoView && el.scrollIntoView({ behavior: 'smooth' }); }, 50); },
+  stmtclose: () => { UI.stmt = null; render(); },
+  stmtcsv: () => {
+    const s = UI.stmt, r = statementRows(s.from, s.to, s.mode, s.cats), q = v => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [[statementTitle(s)], [], ['Date', 'Time', 'Type', 'Category', 'Details', 'Method', 'Amount (EGP)']]
+      .concat(r.rows.map(x => [x.date, x.type === 'Income' || x.cat === 'Cigarettes' ? '' : fmtTime(x.time), x.type, x.cat, x.details, x.method, x.amount.toFixed(2)]))
+      .concat([[], ['Total expenses', '', '', '', '', '', (-r.out).toFixed(2)], ['Total income', '', '', '', '', '', r.inc.toFixed(2)], ['Difference', '', '', '', '', '', r.net.toFixed(2)]]);
+    const blob = new Blob(['﻿' + lines.map(l => l.map(q).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = `statement-${s.from}${s.to !== s.from ? '_to_' + s.to : ''}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  stmtprint: () => {
+    const s = UI.stmt, r = statementRows(s.from, s.to, s.mode, s.cats), w = window.open('', '_blank'); if (!w) { toast('Allow pop-ups to print'); return; }
+    w.document.write(`<!DOCTYPE html><html><head><title>${esc(statementTitle(s))}</title><style>body{font-family:system-ui,sans-serif;margin:24px;color:#111}h2{font-size:18px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #ddd;padding:6px;text-align:left}.num{text-align:right;white-space:nowrap}.tot td{font-weight:700;border-top:2px solid #333}.ok{color:#0a7a52}.warn{color:#c0392b}.muted{color:#777}</style></head><body><h2>Quit Timer · ${esc(statementTitle(s))}</h2><p class="muted">Printed ${new Date().toLocaleString('en-US')}</p>${statementTable(r)}</body></html>`);
+    w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  },
+});
 
 </script>
 <script type="module">
